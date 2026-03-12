@@ -1,4 +1,3 @@
-import datetime
 from typing import *
 from threading import Thread
 from openai import OpenAI
@@ -128,53 +127,66 @@ class UserManager:
         is_active:bool
         is_farewell_caused_active:bool
         processing_thread:Optional[Thread]
+        session_file:Optional[TextIO]
         def __init__(self, user_id):
             logger.info(f"Creating user {user_id}")
             self.user_id = user_id
-            self.last_active_time = datetime.datetime.now()
-            self.is_active = True
-            self.is_farewell_caused_active = False
-            self.chat_history = []
-            self.awaiting_queue = []
             self.processing_thread = Thread(
                 target=self.process_loop,
                 daemon=True
             )
+            self.self_reset_active()
             self.processing_thread.start()
 
+
+        def self_reset_active(self) -> None:
+            self.chat_history = []
+            self.awaiting_queue = []
+            self.last_active_time = datetime.datetime.now()
+            self.is_active = True
+            self.is_farewell_caused_active = False
+            self.session_file = open(
+                os.path.join(HOME_DIRECTORY, "sessions", f"{self.user_id}.{self.last_active_time.strftime("%Y-%m-%d.%H-%M-%S")}.txt"),
+                "a",
+                encoding="utf-8",
+                buffering=1
+            )
         def process_loop(self) -> None:
             '''
             Process loop for each user
             '''
-            logger.debug(f"{self.user_id} Starting processing loop")
-            while self.is_active or self.is_farewell_caused_active:
-                self.is_farewell_caused_active = False # execute only once
-                if len(self.awaiting_queue) > 0:
-                    # if anything in await queue
-                    logger.debug(f"{self.user_id} awq msg count:{len(self.awaiting_queue)}")
-                    self.chat_history.extend(self.awaiting_queue)
-                    self.awaiting_queue = []
-                    logger.debug(f"{self.user_id} extended chat history & awq cleared")
-                    logger.debug(f"{self.user_id} chat history:"); logger.debug(general_output_msg_list(self.chat_history))
-                    
-                    response:Message = get_llm_response(self.chat_history)
-                    logger.debug(f"{self.user_id} 1# response:"); logger.debug(general_output_msg(response))
-                    self.process_tool_calls(response)
-                else:
-                    # no message in awqueue
-                    logger.debug(f"{self.user_id} no msg in awq")
-                    if datetime.datetime.now() - self.last_active_time > USER_CONVERSATION_EXPIRE_TIMEOUT:
-                        # this block execute only once
-                        # stop processing thread
-                        self.is_active = False
-                        self.is_farewell_caused_active = True
-                        logger.info(f"{self.user_id} is no longer active, set fwactive to True")
-                        self.farewell()
-                        logger.debug(f"{self.user_id} processing thread stopped")
-                sleep(1) # gap between processing loops
-            # thread stop here, is it correct???
-            # self.processing_thread.join(timeout=2)
-            sleep(1) # for safety
+            while True:
+                logger.debug(f"{self.user_id} processing loop")
+                while self.is_active or self.is_farewell_caused_active:
+                    if len(self.awaiting_queue) > 0:
+                        # if anything in await queue
+                        logger.debug(f"{self.user_id} awq msg count:{len(self.awaiting_queue)}")
+                        self.chat_history.extend(self.awaiting_queue)
+                        self.awaiting_queue = []
+                        logger.debug(f"{self.user_id} extended chat history & awq cleared")
+                        logger.debug(f"{self.user_id} chat history:"); logger.debug(general_output_msg_list(self.chat_history))
+                        
+                        response:Message = get_llm_response(self.chat_history)
+                        logger.debug(f"{self.user_id} 1# response:"); logger.debug(general_output_msg(response))
+                        self.process_tool_calls(response)
+                        if self.is_farewell_caused_active:
+                            self.session_file.close()
+                            logger.info(f"{self.user_id} session file closed")
+                            self.is_farewell_caused_active = False # execute only once 
+                    else:
+                        # no message in awqueue
+                        logger.debug(f"{self.user_id} no msg in awq")
+                        if self.is_active and datetime.datetime.now() - self.last_active_time > USER_CONVERSATION_EXPIRE_TIMEOUT:
+                            # this block execute only once
+                            # stop processing thread
+                            self.is_active = False
+                            self.is_farewell_caused_active = True
+                            logger.info(f"{self.user_id} is no longer active, set fwactive to True")
+                            self.farewell()
+                            # logger.debug(f"{self.user_id} processing thread stopped")
+                        
+                    sleep(1) # gap between active check
+                sleep(1) # for safety
         def process_tool_calls(self, current_assistant_message:Message) -> None: # Recursively process tool calls
             # handle new ast msg here
             self.send_message(current_assistant_message)
@@ -185,11 +197,13 @@ class UserManager:
                 logger.debug(f"{self.user_id} tool call")
                 display_message("Assistant", f"{self.user_id} {current_assistant_message.content}")
                 display_message("Tool Call", f"{self.user_id} {current_assistant_message.tool_calls.function.name} & {current_assistant_message.tool_calls.function.arguments}", 2)
-                self.chat_history.append(current_assistant_message)
+                self.chat_history.append(current_assistant_message) # append & write always together
+                self.session_file.write(f"[{current_assistant_message.role}|tool_call_id:{current_assistant_message.tool_calls.id}]: {current_assistant_message.content}\n")
                 logger.debug(f"{self.user_id} append ast msg to chat history: "); logger.debug(general_output_msg(current_assistant_message))
                 tool_message = self.execute_tools(current_assistant_message.tool_calls)
                 display_message("Tool Response", f"{self.user_id} {tool_message}")
-                self.chat_history.append(tool_message)
+                self.chat_history.append(tool_message) # append & write always together
+                self.session_file.write(f"[{tool_message.role}|tool_call_id:{tool_message.tool_call_id}]: {tool_message.content}\n")
                 logger.debug(f"{self.user_id} append tool msg to chat history: "); logger.debug(general_output_msg(tool_message))
                 current_assistant_message = get_llm_response(self.chat_history)
                 logger.debug(f"{self.user_id} refresh ast msg:"); logger.debug(general_output_msg(current_assistant_message))
@@ -197,9 +211,11 @@ class UserManager:
             else:
                 logger.debug(f"{self.user_id} no tool calls")
                 display_message("Assistant", f"{self.user_id} {current_assistant_message.content}")
-                self.chat_history.append(current_assistant_message)
+                self.chat_history.append(current_assistant_message) # append & write always together
+                self.session_file.write(f"[{current_assistant_message.role}|tool_call_id:{current_assistant_message.tool_calls.id if current_assistant_message.tool_calls else "None"}]: {current_assistant_message.content}\n")
                 logger.debug(f"{self.user_id} append ast msg to chat history: "); logger.debug(general_output_msg(current_assistant_message))
                 logger.debug(f"{self.user_id} chat history:"); logger.debug(general_output_msg_list(self.chat_history))
+
         def execute_tools(self, tool_calls: ToolCall) -> Message:
             """Execute the tools called by the LLM."""
             logger.debug(f"{self.user_id} Executing tools...")
@@ -253,9 +269,11 @@ After finish all of this, you can say goodbye to {self.user_id}.")])
             basic message handler, can be used either by UserManager.general_handle_new_message()
             or by self.new_message()
             '''
-            self.is_active = True
-            self.last_active_time = datetime.datetime.now()
-            self.awaiting_queue.extend(incoming_message_queue)
+            # self.is_active = True
+            # self.last_active_time = datetime.datetime.now()
+            self.awaiting_queue.extend(incoming_message_queue) # together we are invincible
+            for incoming_message in incoming_message_queue:
+                self.session_file.write(f"[{incoming_message.role}|tool_call_id:{incoming_message.tool_calls.id if incoming_message.tool_calls else "None"}]: {incoming_message.content}\n")
             logger.info(f"{self.user_id} Add msg to awq, msg count: {len(self.awaiting_queue)}")
             logger.info(f"{self.user_id} Set last active time to {self.last_active_time}")
         
@@ -271,7 +289,9 @@ After finish all of this, you can say goodbye to {self.user_id}.")])
         '''
         def soul_content() -> str:
             soul_file = open(os.path.join(HOME_DIRECTORY,SOUL_FILE), "r", encoding="utf-8")
-            return soul_file.read()
+            soul_msg:str = soul_file.read()
+            soul_file.close()
+            return soul_msg
         
         incoming_message_queue = add_timestamp_to_msg_list(incoming_message_queue)
 
@@ -282,6 +302,8 @@ After finish all of this, you can say goodbye to {self.user_id}.")])
             incoming_message_queue.insert(0, Message(role="system", content=f"{soul_content()}user_id: {user_id}"))
         elif self.users[user_id].is_active == False:
             # user be active again
+            self.users[user_id].self_reset_active()
+            logger.info(f"{user_id} reset active")
             incoming_message_queue.insert(0, Message(role="system", content=f"{soul_content()}user_id: {user_id}"))
         else: 
             # user still active
