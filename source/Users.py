@@ -18,7 +18,7 @@ LLM_MODEL = os.getenv("LLM_MODEL")
 LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS"))
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE"))
 
-USER_CONVERSATION_EXPIRE_TIMEOUT = datetime.timedelta(minutes=int(os.getenv("USER_CONVERSATION_EXPIRE_TIMEOUT", "1")))
+USER_CONVERSATION_EXPIRE_TIMEOUT = datetime.timedelta(minutes=int(os.getenv("USER_CONVERSATION_EXPIRE_TIMEOUT", "5")))
 
 HOME_DIRECTORY = os.getenv("HOME_DIRECTORY", "home")
 SOUL_FILE = os.getenv("SOUL_FILE", "soul.md")
@@ -33,6 +33,8 @@ from tools.replace_in_file_tool import execute_tool_call as execute_replace, TOO
 from tools.duckduckgo_search_tool import execute_tool_call as execute_duckduckgo, TOOL_DEFINITION as DUCKDUCKGO_TOOL
 from tools.fetch_url_tool import execute_tool_call as execute_fetch_url, TOOL_DEFINITION as FETCH_URL_TOOL
 from tools.execute_command_tool import execute_tool_call as execute_command, TOOL_DEFINITION as EXECUTE_COMMAND_TOOL
+from tools.cron_manage_tool import execute_tool_call as execute_cron_manage, TOOL_DEFINITION as CRON_MANAGE_TOOL_DEF, set_global_cron_manager
+
 def testing_tool(tool_calls:Dict[str,Any])->str:
     function_name = tool_calls["function"]["name"]
     arguments_str = tool_calls["function"]["arguments"]
@@ -46,6 +48,7 @@ def testing_tool(tool_calls:Dict[str,Any])->str:
     test_str = arguments.get("test_str")
     display_message("Testing tool Recv", test_str)
     return "Successfully get " + test_str
+
 TESTING_TOOL_DEF = {
     "type": "function",
     "function": {
@@ -68,6 +71,7 @@ TESTING_TOOL_DEF = {
 
 TOOLS = [
     TESTING_TOOL_DEF,
+    CRON_MANAGE_TOOL_DEF,
     LIST_TOOL,
     READ_TOOL,
     CREATE_TOOL,
@@ -81,6 +85,7 @@ TOOLS = [
 ]
 TOOL_EXECUTORS = {
     "testing_tool" : testing_tool,
+    "cron_manage": execute_cron_manage,
     "list_files": execute_list,
     "read_file": execute_read,
     "create_file_or_folder": execute_create,
@@ -259,7 +264,7 @@ class UserManager:
         def farewell(self) -> None:
             self.new_message([Message(role="user", content=f"\
 [SYSTEM MESSAGE]\
-{self.user_id} has been in silence for {USER_CONVERSATION_EXPIRE_TIMEOUT} minutes. \
+{self.user_id} has been in silence for {USER_CONVERSATION_EXPIRE_TIMEOUT}. \
 Summary anything notewothy, write them down to your memory, \
 so that you can easily pick up where you left off when {self.user_id} come back. \
 After finish all of this, you can say goodbye to {self.user_id}.")])
@@ -280,7 +285,7 @@ After finish all of this, you can say goodbye to {self.user_id}.")])
 
     users:Dict[str, User]
 
-    def __init__(self) -> UserManager:
+    def __init__(self):
         self.users = {}
 
     def general_handle_new_message(self, user_id:str, incoming_message_queue:List[Message]) -> None:
@@ -307,5 +312,6 @@ After finish all of this, you can say goodbye to {self.user_id}.")])
             incoming_message_queue.insert(0, Message(role="system", content=f"{soul_content()}user_id: {user_id}"))
         else: 
             # user still active
+            self.users[user_id].last_active_time = datetime.datetime.now()
             pass
         self.users[user_id].new_message(incoming_message_queue)

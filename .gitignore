@@ -7,4 +7,6 @@ test_*.py
 
 .vscode/
 
+home/
+
 __pycache__/
