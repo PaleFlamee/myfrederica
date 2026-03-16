@@ -36,42 +36,7 @@ from tools.execute_command_tool import execute_tool_call as execute_command, TOO
 from tools.cron_manage_tool import execute_tool_call as execute_cron_manage, TOOL_DEFINITION as CRON_MANAGE_TOOL_DEF, set_global_cron_manager
 from tools.search_markdown_tool import execute_tool_call as execute_search_markdown, TOOL_DEFINITION as SEARCH_MARKDOWN_TOOL
 
-def testing_tool(tool_calls:Dict[str,Any])->str:
-    function_name = tool_calls["function"]["name"]
-    arguments_str = tool_calls["function"]["arguments"]
-    arguments = json.loads(arguments_str)
-    
-    # 验证工具名称
-    if function_name != "testing_tool":
-        return f"错误：未知的工具 '{function_name}'"
-    
-    # 提取参数
-    test_str = arguments.get("test_str")
-    display_message("Testing tool Recv", test_str)
-    return "Successfully get " + test_str
-
-TESTING_TOOL_DEF = {
-    "type": "function",
-    "function": {
-        "name": "testing_tool",
-        "description": (
-            "测试用工具，回显参数"
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "test_str": {
-                    "type": "string",
-                    "description": "回显的参数"
-                }
-            },
-            "required": ["test_str"]
-        }
-    }
-}
-
 TOOLS = [
-    TESTING_TOOL_DEF,
     CRON_MANAGE_TOOL_DEF,
     LIST_TOOL,
     READ_TOOL,
@@ -86,7 +51,6 @@ TOOLS = [
     SEARCH_MARKDOWN_TOOL
 ]
 TOOL_EXECUTORS = {
-    "testing_tool" : testing_tool,
     "cron_manage": execute_cron_manage,
     "list_files": execute_list,
     "read_file": execute_read,
@@ -174,9 +138,12 @@ class UserManager:
                         logger.debug(f"{self.user_id} extended chat history & awq cleared")
                         # logger.debug(f"{self.user_id} chat history:"); logger.debug(general_output_msg_list(self.chat_history))
                         
+                        # TODO: add exception handling
                         response:Message = get_llm_response(self.chat_history)
                         logger.debug(f"{self.user_id} 1# response:"); logger.debug(general_output_msg(response))
+
                         self.process_tool_calls(response)
+
                         if self.is_farewell_caused_active:
                             self.session_file.close()
                             logger.info(f"{self.user_id} session file closed")
@@ -219,10 +186,24 @@ class UserManager:
             else:
                 logger.debug(f"{self.user_id} no tool calls")
                 display_message("Assistant", f"{self.user_id} {current_assistant_message.content}")
-                self.chat_history.append(current_assistant_message) # append & write always together
+                self.chat_history.append(current_assistant_message) # append & write, best friends together
                 self.session_file.write(f"[{current_assistant_message.role}|tcid:{current_assistant_message.tool_calls.id[-5:-1] if current_assistant_message.tool_calls else "None"}]: {current_assistant_message.content}\n")
                 logger.debug(f"{self.user_id} append ast msg to chat history: "); logger.debug(general_output_msg(current_assistant_message))
-                #logger.debug(f"{self.user_id} chat history:"); logger.debug(general_output_msg_list(self.chat_history))
+
+                # tool-calls ends here, compress all tool-calls & responses, to compress chat history
+                for index, message in enumerate(self.chat_history):
+                    if message.role == "assistant":
+                        if message.tool_calls: # if ast msg & tc exists
+                            self.chat_history[index].tool_calls.function.arguments = (message.tool_calls.function.arguments[0:30] + "[Tool Call Compressed]") if len(message.tool_calls.function.arguments) > 30 else message.tool_calls.function.arguments
+                            continue
+                    elif message.role == "tool":
+                        self.chat_history[index].content = (message.content[0:30] + "[Tool Response Compressed]" if len(message.content) > 30 else message.content)
+                        continue
+                    else:
+                        continue
+                
+                logger.debug(f"{self.user_id} chat history (compressed):"); logger.debug(general_output_msg_list(self.chat_history))
+
 
         def execute_tools(self, tool_calls: ToolCall) -> Message:
             """Execute the tools called by the LLM."""
@@ -246,16 +227,29 @@ class UserManager:
             )
 
         def send_message(self, message: Message) -> None:
+            def _parse_segments(content: str) -> List[str]:
+                """
+                解析消息内容，根据 [SEGMENT] 标记分割成多个段
+                """
+                if not content:
+                    return [""]
+                
+                # 使用 [SEGMENT] 作为分割标记
+                segments = content.split("[SEGMENT]")
+                
+                return segments
+            
             from .WeChatClient import get_wechat_client
             wechat_client=get_wechat_client()
             if message.role == "assistant":
                 content_to_send = message.content
+                segments:List[str] = _parse_segments(content_to_send)
                 if message.tool_calls:
-                    content_to_send += f"\n---\nTool Call: {message.tool_calls.function.name}"
-                wechat_client.send_text_message(
-                    self.user_id, 
-                    content_to_send
-                )
+                    segments[0] += f"\n---\nTool Call: {message.tool_calls.function.name}"
+                if len(segments) > 1:
+                    wechat_client.send_messages(self.user_id, segments)
+                else:
+                    wechat_client.send_text_message(self.user_id, segments[0])
             elif message.role == "tool":
                 pass
             elif message.role == "user" or message.role == "system": # should never happen
@@ -296,13 +290,13 @@ After finish all of this, you can say goodbye to {self.user_id}.")])
         '''
         Generic message handler
         '''
-        def soul_content() -> str:
+        def get_soul_content() -> str:
             soul_file = open(os.path.join(HOME_DIRECTORY,SOUL_FILE), "r", encoding="utf-8")
             soul_msg:str = soul_file.read()
             soul_file.close()
             return soul_msg
         
-        def last_conversation_pick_up(user_id:str) -> str:
+        def get_last_conversation_pick_up(user_id:str) -> str:
             if not os.path.exists(os.path.join(HOME_DIRECTORY, "users",user_id+"-last-conversation-pick-up.md")): # no pick up
                 # create pick up file
                 open(os.path.join(HOME_DIRECTORY, "users",user_id+"-last-conversation-pick-up.md"), "w", encoding="utf-8").close()
@@ -313,7 +307,7 @@ After finish all of this, you can say goodbye to {self.user_id}.")])
                 pick_up_file.close()
                 return pick_up_msg
         
-        def user_memory(user_id:str) -> str:
+        def get_user_memory(user_id:str) -> str:
             if not os.path.exists(os.path.join(HOME_DIRECTORY, "users", f"{user_id}.md")): # no memory
                 # create memory file
                 open(os.path.join(HOME_DIRECTORY, "users", f"{user_id}.md"), "w", encoding="utf-8").close()
@@ -331,19 +325,19 @@ After finish all of this, you can say goodbye to {self.user_id}.")])
             self.users[user_id] = self.User(user_id)
             logger.info(f"{user_id} joined the conversation")
             incoming_message_queue.insert(0, Message(role="system", content=f"\
-<soul>{soul_content()}</soul>\n\
+<soul>{get_soul_content()}</soul>\n\
 <user_id>{user_id}</user_id>\n\
-<user_memory>{user_memory(user_id)}</user_memory>\
-<last_conversation_pick_up>{last_conversation_pick_up(user_id)}</last_conversation_pick_up>"))
+<user_memory>{get_user_memory(user_id)}</user_memory>\n\
+<last_conversation_pick_up>{get_last_conversation_pick_up(user_id)}</last_conversation_pick_up>\n"))
         elif self.users[user_id].is_active == False:
             # user be active again
             self.users[user_id].self_reset_active()
             logger.info(f"{user_id} reset active")
             incoming_message_queue.insert(0, Message(role="system", content=f"\
-<soul>{soul_content()}</soul>\n\
+<soul>{get_soul_content()}</soul>\n\
 <user_id>{user_id}</user_id>\n\
-<user_memory>{user_memory(user_id)}</user_memory>\
-<last_conversation_pick_up>{last_conversation_pick_up(user_id)}</last_conversation_pick_up>"))
+<user_memory>{get_user_memory(user_id)}</user_memory>\n\
+<last_conversation_pick_up>{get_last_conversation_pick_up(user_id)}</last_conversation_pick_up>\n"))
         else: 
             # user still active
             self.users[user_id].last_active_time = datetime.datetime.now()

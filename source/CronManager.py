@@ -255,7 +255,7 @@ class CronManager:
             self.save_crons()
     
     def _check_loop(self):
-        """检查循环（每分钟检查一次）"""
+        """检查循环（每30s检查一次）"""
         logger.info("CronManager检查线程启动")
         
         while self.running:
@@ -264,7 +264,7 @@ class CronManager:
             except Exception as e:
                 logger.error(f"CronManager检查循环出错: {e}")
             
-            # 每1/2分钟检查一次
+            # 每30s检查一次
             time.sleep(30)
     
     def start(self):

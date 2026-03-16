@@ -45,3 +45,35 @@ class Message:
         if self.tool_call_id:
             dicted_message["tool_call_id"] = self.tool_call_id
         return dicted_message
+
+'''
+Assistant Message(Tool Call):
+role: assistant
+content: ... | None
+tcid: None
+tool_calls:
+    id: ...
+    type: function
+    function:
+        name: ...
+        arguments: ...
+
+Assitant Message(No Tool Call):
+role: assistant
+content: ...
+tcid: None
+tool_calls: None
+
+Tool Call Message:
+role: tool
+content: ...
+tcid: ...
+tool_calls: None
+
+User / System Message:
+role: user / system
+content: ...
+tcid: None
+tool_calls: None
+
+'''
