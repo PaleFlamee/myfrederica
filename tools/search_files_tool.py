@@ -3,13 +3,15 @@
 """
 search_files_tool.py
 供LLM使用的文件搜索工具
-支持通过tool_call调用，在.md文件中搜索特定关键词并返回上下文
+支持三种搜索方式：单文件搜索、文件夹搜索、文件夹递归搜索
+支持所有文本文件类型，不再限制.md文件
 """
 
 import os
 import json
 import re
-from typing import Dict, Any, List, Tuple
+import fnmatch
+from typing import Dict, Any, List, Tuple, Optional
 
 # 从环境变量获取根目录，默认为"home"
 ROOT_DIR = os.getenv("HOME_DIRECTORY", "home")
@@ -49,19 +51,66 @@ def validate_path(path: str) -> bool:
     
     return True
 
-def search_files(path: str, keyword: str, recursive: bool = False, 
-                 context_lines_before: int = 3, context_lines_after: int = 3, 
-                 max_context_chars: int = 200) -> str:
+def get_files_to_search(path: str, recursive: bool = False, file_pattern: Optional[str] = None) -> List[Tuple[str, str]]:
     """
-    在指定目录的.md文件中搜索关键词，返回匹配的上下文
+    获取要搜索的文件列表
     
     Args:
-        path: 搜索目录路径（相对路径，相对于根目录）
+        path: 搜索路径（文件或目录）
+        recursive: 是否递归搜索子目录（仅当path为目录时有效）
+        file_pattern: 文件名匹配模式（如 *.py, *.txt）
+        
+    Returns:
+        List[Tuple[str, str]]: 文件列表，每个元素为(相对路径, 绝对路径)
+    """
+    abs_path = os.path.join(BASE_PATH, path)
+    
+    # 如果是文件，直接返回该文件
+    if os.path.isfile(abs_path):
+        rel_path = os.path.relpath(abs_path, BASE_PATH)
+        return [(rel_path, abs_path)]
+    
+    # 如果是目录，收集目录下的文件
+    files_to_search = []
+    
+    if recursive:
+        # 递归搜索
+        for root, dirs, files in os.walk(abs_path):
+            for file in files:
+                if file_pattern and not fnmatch.fnmatch(file, file_pattern):
+                    continue
+                file_path = os.path.join(root, file)
+                rel_path = os.path.relpath(file_path, BASE_PATH)
+                files_to_search.append((rel_path, file_path))
+    else:
+        # 非递归搜索
+        for item in os.listdir(abs_path):
+            item_path = os.path.join(abs_path, item)
+            if os.path.isfile(item_path):
+                if file_pattern and not fnmatch.fnmatch(item, file_pattern):
+                    continue
+                rel_path = os.path.relpath(item_path, BASE_PATH)
+                files_to_search.append((rel_path, item_path))
+    
+    return files_to_search
+
+def search_files(path: str, keyword: str, recursive: bool = False, 
+                 context_lines_before: int = 3, context_lines_after: int = 3, 
+                 max_context_chars: int = 200, file_pattern: Optional[str] = None) -> str:
+    """
+    在指定路径中搜索关键词，支持三种搜索方式：
+    1. 单文件搜索：path指向一个具体文件
+    2. 文件夹搜索：path指向目录，recursive=False
+    3. 文件夹递归搜索：path指向目录，recursive=True
+    
+    Args:
+        path: 搜索路径（可以是文件或目录）
         keyword: 要搜索的关键词
-        recursive: 是否递归搜索子目录，默认为False
+        recursive: 是否递归搜索子目录（仅当path为目录时有效）
         context_lines_before: 关键词前的上下文行数，默认为3
         context_lines_after: 关键词后的上下文行数，默认为3
         max_context_chars: 每个匹配项返回的最大字符数，默认为200
+        file_pattern: 文件名匹配模式（如 *.py, *.txt），默认搜索所有文件
     
     Returns:
         str: 成功时返回搜索结果，失败时返回错误信息
@@ -78,10 +127,6 @@ def search_files(path: str, keyword: str, recursive: bool = False,
         if not os.path.exists(abs_path):
             return f"错误：路径 '{path}' 不存在"
         
-        # 检查是否为目录
-        if not os.path.isdir(abs_path):
-            return f"错误：'{path}' 不是目录"
-        
         # 验证参数
         if not keyword or not keyword.strip():
             return "错误：关键词不能为空"
@@ -97,36 +142,25 @@ def search_files(path: str, keyword: str, recursive: bool = False,
         if max_context_chars < 100:
             return f"错误：最大字符数至少为100，收到 {max_context_chars}"
         
-        # 收集所有.md文件
-        md_files = []
+        # 获取要搜索的文件列表
+        files_to_search = get_files_to_search(path, recursive, file_pattern)
         
-        if recursive:
-            # 递归搜索
-            for root, dirs, files in os.walk(abs_path):
-                for file in files:
-                    if file.lower().endswith('.md'):
-                        file_path = os.path.join(root, file)
-                        rel_path = os.path.relpath(file_path, BASE_PATH)
-                        md_files.append((rel_path, file_path))
-        else:
-            # 非递归搜索
-            for item in os.listdir(abs_path):
-                item_path = os.path.join(abs_path, item)
-                if os.path.isfile(item_path) and item.lower().endswith('.md'):
-                    rel_path = os.path.relpath(item_path, BASE_PATH)
-                    md_files.append((rel_path, item_path))
-        
-        if not md_files:
-            return f"信息：在路径 '{path}' 中未找到.md文件"
+        if not files_to_search:
+            # 检查是否是目录但没有文件
+            if os.path.isdir(abs_path):
+                pattern_info = f"（匹配模式: {file_pattern}）" if file_pattern else ""
+                return f"信息：在路径 '{path}' 中未找到文件{pattern_info}"
+            else:
+                return f"信息：路径 '{path}' 不是有效的文件或目录"
         
         # 对文件进行排序（按相对路径）
-        md_files.sort(key=lambda x: x[0])
+        files_to_search.sort(key=lambda x: x[0])
         
         # 搜索关键词
         all_results = []
         total_matches = 0
         
-        for rel_path, file_path in md_files:
+        for rel_path, file_path in files_to_search:
             try:
                 # 检查文件大小
                 file_size = os.path.getsize(file_path)
@@ -202,12 +236,30 @@ def search_files(path: str, keyword: str, recursive: bool = False,
         
         # 构建最终结果
         if total_matches == 0:
-            return f"信息：在 {len(md_files)} 个.md文件中未找到关键词 '{keyword}'"
+            # 确定搜索模式描述
+            if os.path.isfile(abs_path):
+                search_mode = "单文件搜索"
+            elif recursive:
+                search_mode = "文件夹递归搜索"
+            else:
+                search_mode = "文件夹搜索"
+            
+            pattern_info = f"（匹配模式: {file_pattern}）" if file_pattern else ""
+            return f"信息：在 {len(files_to_search)} 个文件中未找到关键词 '{keyword}'{pattern_info}\n搜索模式: {search_mode}"
+        
+        # 确定搜索模式描述
+        if os.path.isfile(abs_path):
+            search_mode = "单文件搜索"
+        elif recursive:
+            search_mode = "文件夹递归搜索"
+        else:
+            search_mode = "文件夹搜索"
         
         result_lines = [
-            f"搜索完成：在 {len(md_files)} 个.md文件中找到 {total_matches} 处匹配",
+            f"搜索完成：在 {len(files_to_search)} 个文件中找到 {total_matches} 处匹配",
             f"关键词: '{keyword}'",
-            f"搜索路径: '{path}' (递归: {recursive})",
+            f"搜索路径: '{path}' (模式: {search_mode})",
+            f"文件匹配模式: {file_pattern if file_pattern else '所有文件'}",
             f"上下文设置: 前{context_lines_before}行/后{context_lines_after}行，最大字符数: {max_context_chars}",
             "=" * 60,
             ""
@@ -227,13 +279,13 @@ TOOL_DEFINITION = {
     "type": "function",
     "function": {
         "name": "search_files",
-        "description": "在指定目录的.md文件中搜索特定关键词，返回关键词所在的文件和上下文。仅搜索.md文件，支持相对路径（相对于根目录，根目录由环境变量LLM_ROOT_DIRECTORY指定，默认为'home'）。禁止使用父目录(..)。",
+        "description": "在指定路径中搜索特定关键词，返回关键词所在的文件和上下文。支持三种搜索方式：单文件搜索、文件夹搜索、文件夹递归搜索。支持所有文本文件类型，可通过file_pattern参数过滤文件类型。支持相对路径（相对于根目录，根目录由环境变量HOME_DIRECTORY指定，默认为'home'）。禁止使用父目录(..)。",
         "parameters": {
             "type": "object",
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "要搜索的目录路径（相对路径，相对于根目录）"
+                    "description": "要搜索的路径（可以是文件或目录）"
                 },
                 "keyword": {
                     "type": "string",
@@ -241,7 +293,7 @@ TOOL_DEFINITION = {
                 },
                 "recursive": {
                     "type": "boolean",
-                    "description": "是否递归搜索子目录。默认为false（仅搜索当前目录）"
+                    "description": "搜索目录时是否递归搜索子目录（仅当path为目录时有效）。默认为false"
                 },
                 "context_lines_before": {
                     "type": "integer",
@@ -257,6 +309,10 @@ TOOL_DEFINITION = {
                     "type": "integer",
                     "description": "每个匹配项返回的最大字符数。默认为200，最小为100",
                     "minimum": 100
+                },
+                "file_pattern": {
+                    "type": "string",
+                    "description": "文件名匹配模式（如 *.py, *.txt, *.md），默认搜索所有文件"
                 }
             },
             "required": ["path", "keyword"]
@@ -299,6 +355,7 @@ def execute_tool_call(tool_call: Dict[str, Any]) -> str:
         context_lines_before = arguments.get("context_lines_before", 3)
         context_lines_after = arguments.get("context_lines_after", 3)
         max_context_chars = arguments.get("max_context_chars", 200)
+        file_pattern = arguments.get("file_pattern")
         
         # 验证必要参数
         if not path:
@@ -307,7 +364,8 @@ def execute_tool_call(tool_call: Dict[str, Any]) -> str:
             return "错误：缺少必要参数 'keyword'"
         
         # 执行工具
-        return search_files(path, keyword, recursive, context_lines_before, context_lines_after, max_context_chars)
+        return search_files(path, keyword, recursive, context_lines_before, 
+                           context_lines_after, max_context_chars, file_pattern)
         
     except json.JSONDecodeError:
         return "错误：无法解析工具参数（无效的JSON格式）"
@@ -322,23 +380,33 @@ def demo_basic_usage():
     """
     print("=== 文件搜索工具基本演示 ===\n")
     
-    # 测试搜索现有关键词
-    print("1. 搜索 '青海省' 关键词:")
-    result = search_files(".", "青海省", recursive=False, context_lines_before=2, context_lines_after=2, max_context_chars=500)
-    print(f"   结果前500字符:\n{result[:500]}...\n")
+    # 测试单文件搜索
+    print("1. 单文件搜索 - 在指定文件中搜索关键词:")
+    result = search_files("soul.md", "青海省", context_lines_before=2, context_lines_after=2, max_context_chars=300)
+    print(f"   结果前300字符:\n{result[:300]}...\n")
     
-    # 测试递归搜索
-    print("2. 测试递归搜索（当前目录无子目录）:")
-    result = search_files(".", "青海省", recursive=True, context_lines_before=1, context_lines_after=1, max_context_chars=300)
+    # 测试文件夹搜索（非递归）
+    print("2. 文件夹搜索 - 在当前目录搜索所有文件:")
+    result = search_files(".", "青海省", recursive=False, context_lines_before=1, context_lines_after=1, max_context_chars=400)
+    print(f"   结果前400字符:\n{result[:400]}...\n")
+    
+    # 测试文件夹递归搜索
+    print("3. 文件夹递归搜索 - 搜索当前目录及子目录:")
+    result = search_files(".", "青海省", recursive=True, context_lines_before=1, context_lines_after=1, max_context_chars=400)
+    print(f"   结果前400字符:\n{result[:400]}...\n")
+    
+    # 测试文件模式过滤
+    print("4. 文件模式过滤 - 只搜索.md文件:")
+    result = search_files(".", "青海省", recursive=False, file_pattern="*.md", context_lines_before=1, context_lines_after=1, max_context_chars=300)
     print(f"   结果前300字符:\n{result[:300]}...\n")
     
     # 测试不存在的关键词
-    print("3. 搜索不存在的关键词:")
+    print("5. 搜索不存在的关键词:")
     result = search_files(".", "不存在的关键词测试", recursive=False)
     print(f"   结果: {result}\n")
     
     # 测试工具调用
-    print("4. 模拟工具调用:")
+    print("6. 模拟工具调用:")
     tool_call = {
         "id": "call_demo_001",
         "type": "function",
@@ -350,7 +418,8 @@ def demo_basic_usage():
                 "recursive": False,
                 "context_lines_before": 2,
                 "context_lines_after": 2,
-                "max_context_chars": 400
+                "max_context_chars": 400,
+                "file_pattern": "*.md"
             })
         }
     }

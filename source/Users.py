@@ -21,7 +21,7 @@ LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE"))
 USER_CONVERSATION_EXPIRE_TIMEOUT = datetime.timedelta(minutes=int(os.getenv("USER_CONVERSATION_EXPIRE_TIMEOUT", "5")))
 
 HOME_DIRECTORY = os.getenv("HOME_DIRECTORY", "home")
-SOUL_FILE = os.getenv("SOUL_FILE", "soul.md")
+SOUL_FILE = os.getenv("SOUL_FILE", "soul")
 
 from tools.list_file_tool import execute_tool_call as execute_list, TOOL_DEFINITION as LIST_TOOL
 from tools.read_file_tool import execute_tool_call as execute_read, TOOL_DEFINITION as READ_TOOL
@@ -34,6 +34,7 @@ from tools.duckduckgo_search_tool import execute_tool_call as execute_duckduckgo
 from tools.fetch_url_tool import execute_tool_call as execute_fetch_url, TOOL_DEFINITION as FETCH_URL_TOOL
 from tools.execute_command_tool import execute_tool_call as execute_command, TOOL_DEFINITION as EXECUTE_COMMAND_TOOL
 from tools.cron_manage_tool import execute_tool_call as execute_cron_manage, TOOL_DEFINITION as CRON_MANAGE_TOOL_DEF, set_global_cron_manager
+from tools.search_markdown_tool import execute_tool_call as execute_search_markdown, TOOL_DEFINITION as SEARCH_MARKDOWN_TOOL
 
 def testing_tool(tool_calls:Dict[str,Any])->str:
     function_name = tool_calls["function"]["name"]
@@ -81,7 +82,8 @@ TOOLS = [
     REPLACE_TOOL,
     DUCKDUCKGO_TOOL,
     FETCH_URL_TOOL,
-    EXECUTE_COMMAND_TOOL
+    EXECUTE_COMMAND_TOOL,
+    SEARCH_MARKDOWN_TOOL
 ]
 TOOL_EXECUTORS = {
     "testing_tool" : testing_tool,
@@ -95,7 +97,8 @@ TOOL_EXECUTORS = {
     "replace_in_file": execute_replace,
     "duckduckgo_search": execute_duckduckgo,
     "fetch_url": execute_fetch_url,
-    "execute_command": execute_command
+    "execute_command": execute_command,
+    "search_markdown_titles": execute_search_markdown
 }
 
 client = OpenAI(
@@ -169,7 +172,7 @@ class UserManager:
                         self.chat_history.extend(self.awaiting_queue)
                         self.awaiting_queue = []
                         logger.debug(f"{self.user_id} extended chat history & awq cleared")
-                        logger.debug(f"{self.user_id} chat history:"); logger.debug(general_output_msg_list(self.chat_history))
+                        # logger.debug(f"{self.user_id} chat history:"); logger.debug(general_output_msg_list(self.chat_history))
                         
                         response:Message = get_llm_response(self.chat_history)
                         logger.debug(f"{self.user_id} 1# response:"); logger.debug(general_output_msg(response))
@@ -203,12 +206,12 @@ class UserManager:
                 display_message("Assistant", f"{self.user_id} {current_assistant_message.content}")
                 display_message("Tool Call", f"{self.user_id} {current_assistant_message.tool_calls.function.name} & {current_assistant_message.tool_calls.function.arguments}", 2)
                 self.chat_history.append(current_assistant_message) # append & write always together
-                self.session_file.write(f"[{current_assistant_message.role}|tool_call_id:{current_assistant_message.tool_calls.id}]: {current_assistant_message.content}\n")
+                self.session_file.write(f"[{current_assistant_message.role}|tcid:{current_assistant_message.tool_calls.id[-5:-1]}]: {current_assistant_message.content}\n")
                 logger.debug(f"{self.user_id} append ast msg to chat history: "); logger.debug(general_output_msg(current_assistant_message))
                 tool_message = self.execute_tools(current_assistant_message.tool_calls)
                 display_message("Tool Response", f"{self.user_id} {tool_message}")
                 self.chat_history.append(tool_message) # append & write always together
-                self.session_file.write(f"[{tool_message.role}|tool_call_id:{tool_message.tool_call_id}]: {tool_message.content}\n")
+                self.session_file.write(f"[{tool_message.role}|tcid:{tool_message.tool_call_id[-5:-1]}]: {tool_message.content}\n")
                 logger.debug(f"{self.user_id} append tool msg to chat history: "); logger.debug(general_output_msg(tool_message))
                 current_assistant_message = get_llm_response(self.chat_history)
                 logger.debug(f"{self.user_id} refresh ast msg:"); logger.debug(general_output_msg(current_assistant_message))
@@ -217,9 +220,9 @@ class UserManager:
                 logger.debug(f"{self.user_id} no tool calls")
                 display_message("Assistant", f"{self.user_id} {current_assistant_message.content}")
                 self.chat_history.append(current_assistant_message) # append & write always together
-                self.session_file.write(f"[{current_assistant_message.role}|tool_call_id:{current_assistant_message.tool_calls.id if current_assistant_message.tool_calls else "None"}]: {current_assistant_message.content}\n")
+                self.session_file.write(f"[{current_assistant_message.role}|tcid:{current_assistant_message.tool_calls.id[-5:-1] if current_assistant_message.tool_calls else "None"}]: {current_assistant_message.content}\n")
                 logger.debug(f"{self.user_id} append ast msg to chat history: "); logger.debug(general_output_msg(current_assistant_message))
-                logger.debug(f"{self.user_id} chat history:"); logger.debug(general_output_msg_list(self.chat_history))
+                #logger.debug(f"{self.user_id} chat history:"); logger.debug(general_output_msg_list(self.chat_history))
 
         def execute_tools(self, tool_calls: ToolCall) -> Message:
             """Execute the tools called by the LLM."""
@@ -265,7 +268,8 @@ class UserManager:
             self.new_message([Message(role="user", content=f"\
 [SYSTEM MESSAGE]\
 {self.user_id} has been in silence for {USER_CONVERSATION_EXPIRE_TIMEOUT}. \
-Summary anything notewothy, write them down to your memory, \
+Summary anything notewothy, write them down to your memory. \
+Also update `users/{self.user_id}-last-conversation-pick-up.md `\
 so that you can easily pick up where you left off when {self.user_id} come back. \
 After finish all of this, you can say goodbye to {self.user_id}.")])
 
@@ -278,7 +282,7 @@ After finish all of this, you can say goodbye to {self.user_id}.")])
             # self.last_active_time = datetime.datetime.now()
             self.awaiting_queue.extend(incoming_message_queue) # together we are invincible
             for incoming_message in incoming_message_queue:
-                self.session_file.write(f"[{incoming_message.role}|tool_call_id:{incoming_message.tool_calls.id if incoming_message.tool_calls else "None"}]: {incoming_message.content}\n")
+                self.session_file.write(f"[{incoming_message.role}|tcid:{incoming_message.tool_calls.id[-5:-1] if incoming_message.tool_calls else "None"}]: {incoming_message.content}\n")
             logger.info(f"{self.user_id} Add msg to awq, msg count: {len(self.awaiting_queue)}")
             logger.info(f"{self.user_id} Set last active time to {self.last_active_time}")
         
@@ -298,18 +302,48 @@ After finish all of this, you can say goodbye to {self.user_id}.")])
             soul_file.close()
             return soul_msg
         
+        def last_conversation_pick_up(user_id:str) -> str:
+            if not os.path.exists(os.path.join(HOME_DIRECTORY, "users",user_id+"-last-conversation-pick-up.md")): # no pick up
+                # create pick up file
+                open(os.path.join(HOME_DIRECTORY, "users",user_id+"-last-conversation-pick-up.md"), "w", encoding="utf-8").close()
+                return "None"
+            else:
+                pick_up_file = open(os.path.join(HOME_DIRECTORY, "users",user_id+"-last-conversation-pick-up.md"), "r", encoding="utf-8")
+                pick_up_msg:str = pick_up_file.read()
+                pick_up_file.close()
+                return pick_up_msg
+        
+        def user_memory(user_id:str) -> str:
+            if not os.path.exists(os.path.join(HOME_DIRECTORY, "users", f"{user_id}.md")): # no memory
+                # create memory file
+                open(os.path.join(HOME_DIRECTORY, "users", f"{user_id}.md"), "w", encoding="utf-8").close()
+                return "None"
+            else:
+                user_memory_file = open(os.path.join(HOME_DIRECTORY, "users", f"{user_id}.md"), "r", encoding="utf-8")
+                user_memory_msg:str = user_memory_file.read()
+                user_memory_file.close()
+                return user_memory_msg
+        
         incoming_message_queue = add_timestamp_to_msg_list(incoming_message_queue)
 
         if user_id not in self.users:
             # new user
             self.users[user_id] = self.User(user_id)
             logger.info(f"{user_id} joined the conversation")
-            incoming_message_queue.insert(0, Message(role="system", content=f"{soul_content()}user_id: {user_id}"))
+            incoming_message_queue.insert(0, Message(role="system", content=f"\
+<soul>{soul_content()}</soul>\n\
+<user_id>{user_id}</user_id>\n\
+<user_memory>{user_memory(user_id)}</user_memory>\
+<last_conversation_pick_up>{last_conversation_pick_up(user_id)}</last_conversation_pick_up>"))
         elif self.users[user_id].is_active == False:
             # user be active again
             self.users[user_id].self_reset_active()
             logger.info(f"{user_id} reset active")
-            incoming_message_queue.insert(0, Message(role="system", content=f"{soul_content()}user_id: {user_id}"))
+            incoming_message_queue.insert(0, Message(role="system", content=f"\
+<soul>{soul_content()}</soul>\n\
+<user_id>{user_id}</user_id>\n\
+<user_memory>{user_memory(user_id)}</user_memory>\
+<last_conversation_pick_up>{last_conversation_pick_up(user_id)}</last_conversation_pick_up>"))
         else: 
             # user still active
             self.users[user_id].last_active_time = datetime.datetime.now()

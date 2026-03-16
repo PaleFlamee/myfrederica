@@ -141,8 +141,8 @@ TOOL_DEFINITION = {
         "name": "cron_manage",
         "description": (
             "管理定时任务（cron任务）。支持创建、删除、列出cron任务。\n"
-            "创建任务示例：{\"action\": \"create\", \"name\": \"提醒吃饭\", \"target_user\": \"ivybridge\", \"message\": \"该吃饭了！\", \"target_time\": \"2024-03-12 18:00:00\"}\n"
-            "删除任务示例：{\"action\": \"delete\", \"name\": \"提醒吃饭\"}\n"
+            "创建任务示例：{\"action\": \"create\", \"name\": \"Remind ivybridge to eat\", \"target_user\": \"ivybridge\", \"message\": \"Frederica, seeing this message means a cron to remind ivybridge to eat has been triggered.\", \"target_time\": \"2024-03-12 18:00:00\"}\n"
+            "删除任务示例：{\"action\": \"delete\", \"name\": \"Remind ivybridge to eat\"}\n"
             "列出任务示例：{\"action\": \"list\"} 或 {\"action\": \"list\", \"filter_status\": \"pending\"}"
         ),
         "parameters": {
@@ -163,7 +163,7 @@ TOOL_DEFINITION = {
                 },
                 "message": {
                     "type": "string",
-                    "description": "定时发送的消息内容（create时必填）"
+                    "description": "定时任务触发时用来提示Frederica的信息（create时必填）"
                 },
                 "target_time": {
                     "type": "string",

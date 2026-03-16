@@ -31,7 +31,7 @@ def setup_logger() -> logging.handlers.QueueListener:
             }
         },
         'root': {
-            'level': 'DEBUG',
+            'level': 'INFO',
             'handlers': []  # 稍后替换为 QueueHandler
         }
     }
