@@ -85,7 +85,9 @@ def get_llm_response(chat_history:List[Message]) -> Message:
         role = response.choices[0].message.role,
         content = response.choices[0].message.content,
         tool_calls = response.choices[0].message.tool_calls[0] if response.choices[0].message.tool_calls else None,
-        tool_call_id = response.choices[0].message.tool_calls[0].id if response.choices[0].message.tool_calls else None
+        tool_call_id = response.choices[0].message.tool_calls[0].id if response.choices[0].message.tool_calls else None,
+        prompt_tokens = response.usage.prompt_tokens,
+        completion_tokens = response.usage.completion_tokens
     )
 
 
@@ -244,8 +246,10 @@ class UserManager:
             if message.role == "assistant":
                 content_to_send = message.content
                 segments:List[str] = _parse_segments(content_to_send)
+                # token usage info
+                segments[0] += f"\n---\nToken Usage: {message.prompt_tokens} in, {message.completion_tokens} out\n"
                 if message.tool_calls:
-                    segments[0] += f"\n---\nTool Call: {message.tool_calls.function.name}"
+                    segments[0] += f"Tool Call: {message.tool_calls.function.name}"
                 if len(segments) > 1:
                     wechat_client.send_messages(self.user_id, segments)
                 else:
@@ -317,6 +321,12 @@ After finish all of this, you can say goodbye to {self.user_id}.")])
                 user_memory_msg:str = user_memory_file.read()
                 user_memory_file.close()
                 return user_memory_msg
+
+        def get_frederica_message() -> str:
+            frederica_message_file = open(os.path.join(HOME_DIRECTORY, "frederica"), "r", encoding="utf-8")
+            frederica_message_content:str = frederica_message_file.read()
+            frederica_message_file.close()
+            return frederica_message_content
         
         incoming_message_queue = add_timestamp_to_msg_list(incoming_message_queue)
 
@@ -328,7 +338,8 @@ After finish all of this, you can say goodbye to {self.user_id}.")])
 <soul>{get_soul_content()}</soul>\n\
 <user_id>{user_id}</user_id>\n\
 <user_memory>{get_user_memory(user_id)}</user_memory>\n\
-<last_conversation_pick_up>{get_last_conversation_pick_up(user_id)}</last_conversation_pick_up>\n"))
+<last_conversation_pick_up>{get_last_conversation_pick_up(user_id)}</last_conversation_pick_up>\n\
+<frederica_message>{get_frederica_message()}</frederica_message>\n"))
         elif self.users[user_id].is_active == False:
             # user be active again
             self.users[user_id].self_reset_active()
@@ -337,7 +348,8 @@ After finish all of this, you can say goodbye to {self.user_id}.")])
 <soul>{get_soul_content()}</soul>\n\
 <user_id>{user_id}</user_id>\n\
 <user_memory>{get_user_memory(user_id)}</user_memory>\n\
-<last_conversation_pick_up>{get_last_conversation_pick_up(user_id)}</last_conversation_pick_up>\n"))
+<last_conversation_pick_up>{get_last_conversation_pick_up(user_id)}</last_conversation_pick_up>\n\
+<frederica_message>{get_frederica_message()}</frederica_message>\n"))
         else: 
             # user still active
             self.users[user_id].last_active_time = datetime.datetime.now()

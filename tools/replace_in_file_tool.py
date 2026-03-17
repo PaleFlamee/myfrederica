@@ -14,46 +14,12 @@ from typing import Dict, Any
 ROOT_DIR = os.getenv("HOME_DIRECTORY", "home")
 BASE_PATH = os.path.join(os.getcwd(), ROOT_DIR)
 
-def validate_path(path: str) -> bool:
-    """
-    验证路径是否安全
-    
-    Args:
-        path: 要验证的路径
-        
-    Returns:
-        bool: 如果路径安全返回True，否则返回False
-    """
-    # 检查是否包含父目录引用
-    if ".." in path:
-        return False
-    
-    # 检查是否为绝对路径（Windows和Unix风格）
-    if os.path.isabs(path):
-        return False
-    
-    # 检查Unix风格的绝对路径（以/开头）
-    if path.startswith('/'):
-        return False
-    
-    # 检查Windows风格的绝对路径（包含盘符）
-    if len(path) > 1 and path[1] == ':':
-        return False
-    
-    # 检查其他不安全字符
-    unsafe_chars = ["~", ":", "*", "?", "\"", "<", ">", "|"]
-    for char in unsafe_chars:
-        if char in path:
-            return False
-    
-    return True
-
 def replace_in_file(path: str, search_text: str, replace_text: str, replace_all: bool = False) -> str:
     """
     在指定文件中搜索并替换文本内容
     
     Args:
-        path: 文件路径（相对路径，相对于根目录）
+        path: 文件路径（相对路径，相对于根目录，支持..访问上级目录）
         search_text: 要搜索的文本内容（精确匹配，区分大小写）
         replace_text: 要替换成的文本内容
         replace_all: 是否替换所有匹配项，默认为False（只替换第一个）
@@ -62,18 +28,14 @@ def replace_in_file(path: str, search_text: str, replace_text: str, replace_all:
         str: 成功时返回替换统计信息，失败时返回错误信息
     """
     try:
-        # 验证路径安全性
-        if not validate_path(path):
-            return "错误：路径包含不安全元素（如..）或格式不正确"
-        
         # 验证搜索文本
         if not search_text or not search_text.strip():
             return "错误：搜索文本不能为空"
         
         search_text = search_text.strip()
         
-        # 构建基于根目录的绝对路径
-        abs_path = os.path.join(BASE_PATH, path)
+        # 构建基于根目录的绝对路径（支持..访问上级目录）
+        abs_path = os.path.normpath(os.path.join(BASE_PATH, path))
         
         # 检查文件是否存在
         if not os.path.exists(abs_path):
@@ -172,13 +134,13 @@ TOOL_DEFINITION = {
     "type": "function",
     "function": {
         "name": "replace_in_file",
-        "description": "在指定文件中搜索并替换文本内容。支持相对路径（相对于根目录，根目录由环境变量LLM_ROOT_DIRECTORY指定，默认为'home'）。精确匹配，区分大小写。禁止使用父目录(..)。",
+        "description": "在指定文件中搜索并替换文本内容。支持相对路径（相对于根目录，根目录由环境变量HOME_DIRECTORY指定，默认为'home'），支持使用..访问上级目录。精确匹配，区分大小写。",
         "parameters": {
             "type": "object",
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "要操作的文件路径（相对路径，相对于根目录）"
+                    "description": "要操作的文件路径（相对路径，相对于根目录，支持..访问上级目录）"
                 },
                 "search_text": {
                     "type": "string",
@@ -253,86 +215,3 @@ def execute_tool_call(tool_call: Dict[str, Any]) -> str:
         return f"错误：工具调用格式不正确 - 缺少字段: {str(e)}"
     except Exception as e:
         return f"错误：执行工具时发生异常 - {str(e)}"
-
-def demo_basic_usage():
-    """
-    演示基本用法
-    """
-    print("=== 文件内容替换工具基本演示 ===\n")
-    
-    # 创建测试文件
-    test_content = """这是测试文件的第一行。
-这是第二行，包含测试文本。
-这是第三行，也包含测试文本。
-这是第四行，没有匹配的文本。
-这是第五行，包含Test文本（注意大小写）。"""
-    
-    test_file = "test_replace.txt"
-    
-    # 写入测试文件
-    try:
-        with open(os.path.join(BASE_PATH, test_file), 'w', encoding='utf-8') as f:
-            f.write(test_content)
-        print(f"1. 已创建测试文件: {test_file}")
-    except Exception as e:
-        print(f"1. 创建测试文件失败: {e}")
-        return
-    
-    # 测试1：替换第一个匹配项
-    print("\n2. 测试替换第一个匹配项:")
-    result = replace_in_file(test_file, "测试文本", "替换后的文本", replace_all=False)
-    print(f"   结果: {result}")
-    
-    # 测试2：替换所有匹配项
-    print("\n3. 测试替换所有匹配项:")
-    result = replace_in_file(test_file, "替换后的文本", "新的文本", replace_all=True)
-    print(f"   结果: {result}")
-    
-    # 测试3：搜索不存在的文本
-    print("\n4. 测试搜索不存在的文本:")
-    result = replace_in_file(test_file, "不存在的文本", "新内容", replace_all=False)
-    print(f"   结果: {result}")
-    
-    # 测试4：区分大小写测试
-    print("\n5. 测试区分大小写（搜索'Test'而不是'test'）:")
-    result = replace_in_file(test_file, "Test", "TEST", replace_all=False)
-    print(f"   结果: {result}")
-    
-    # 测试5：工具调用
-    print("\n6. 模拟工具调用:")
-    tool_call = {
-        "id": "call_demo_001",
-        "type": "function",
-        "function": {
-            "name": "replace_in_file",
-            "arguments": json.dumps({
-                "path": test_file,
-                "search_text": "新的文本",
-                "replace_text": "最终文本",
-                "replace_all": True
-            })
-        }
-    }
-    result = execute_tool_call(tool_call)
-    print(f"   工具调用结果: {result}")
-    
-    # 读取最终文件内容
-    print("\n7. 最终文件内容:")
-    try:
-        with open(os.path.join(BASE_PATH, test_file), 'r', encoding='utf-8') as f:
-            final_content = f.read()
-        print("   " + final_content.replace("\n", "\n   "))
-    except Exception as e:
-        print(f"   读取最终文件失败: {e}")
-    
-    # 清理测试文件
-    print("\n8. 清理测试文件:")
-    try:
-        os.remove(os.path.join(BASE_PATH, test_file))
-        print(f"   已删除: {test_file}")
-    except Exception as e:
-        print(f"   删除测试文件失败: {e}")
-
-if __name__ == "__main__":
-    # 运行基本演示
-    demo_basic_usage()

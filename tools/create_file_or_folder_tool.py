@@ -15,40 +15,6 @@ from typing import Dict, Any
 ROOT_DIR = os.getenv("HOME_DIRECTORY", "home")
 BASE_PATH = os.path.join(os.getcwd(), ROOT_DIR)
 
-def validate_path(path: str) -> bool:
-    """
-    验证路径是否安全
-    
-    Args:
-        path: 要验证的路径
-        
-    Returns:
-        bool: 如果路径安全返回True，否则返回False
-    """
-    # 检查是否包含父目录引用
-    if ".." in path:
-        return False
-    
-    # 检查是否为绝对路径（Windows和Unix风格）
-    if os.path.isabs(path):
-        return False
-    
-    # 检查Unix风格的绝对路径（以/开头）
-    if path.startswith('/'):
-        return False
-    
-    # 检查Windows风格的绝对路径（包含盘符）
-    if len(path) > 1 and path[1] == ':':
-        return False
-    
-    # 检查其他不安全字符
-    unsafe_chars = ["~", ":", "*", "?", "\"", "<", ">", "|"]
-    for char in unsafe_chars:
-        if char in path:
-            return False
-    
-    return True
-
 def validate_name(name: str) -> tuple[bool, str]:
     """
     验证文件/文件夹名称的合法性
@@ -84,10 +50,7 @@ def validate_name(name: str) -> tuple[bool, str]:
     if name.upper() in reserved_names:
         return False, f"'{name}' 是系统保留名称"
     
-    # 检查以点开头或结尾
-    if name.startswith('.') or name.endswith('.'):
-        return False, "名称不能以点开头或结尾"
-    
+    # 允许以点开头或结尾（支持隐藏文件等）
     # 检查连续空格
     if '  ' in name:
         return False, "名称不能包含连续空格"
@@ -101,7 +64,7 @@ def create_file_or_folder(name: str, type: str = "file", path: str = ".") -> str
     Args:
         name: 文件或文件夹名称
         type: 创建类型，'file'（文件）或 'folder'（文件夹）
-        path: 创建路径（相对路径，相对于根目录）
+        path: 创建路径（相对路径，相对于根目录，支持..访问上级目录）
     
     Returns:
         str: 成功时返回成功信息，失败时返回错误信息
@@ -112,15 +75,11 @@ def create_file_or_folder(name: str, type: str = "file", path: str = ".") -> str
         if not is_valid:
             return f"错误：{validation_result}"
         
-        # 验证路径安全性
-        if not validate_path(path):
-            return "错误：路径包含不安全元素（如..）或格式不正确"
-        
-        # 构建基于根目录的目标路径
+        # 构建目标路径（支持相对路径和 .. 访问上级目录）
         if path == ".":
             target_dir = BASE_PATH
         else:
-            target_dir = os.path.join(BASE_PATH, path)
+            target_dir = os.path.normpath(os.path.join(BASE_PATH, path))
         
         # 确保目标目录存在（递归创建）
         os.makedirs(target_dir, exist_ok=True)
@@ -168,7 +127,7 @@ TOOL_DEFINITION = {
     "type": "function",
     "function": {
         "name": "create_file_or_folder",
-        "description": "创建空文件或空文件夹。支持相对路径（相对于根目录，根目录由环境变量LLM_ROOT_DIRECTORY指定，默认为'home'），自动创建父目录。禁止使用父目录(..)。注意：名称应该是纯文件名（不含路径），路径通过 `path` 参数指定。",
+        "description": "创建空文件或空文件夹。支持相对路径（相对于根目录，根目录由环境变量HOME_DIRECTORY指定，默认为'home'），支持使用..访问上级目录，自动创建父目录。注意：名称应该是纯文件名（不含路径），路径通过 `path` 参数指定。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -183,7 +142,7 @@ TOOL_DEFINITION = {
                 },
                 "path": {
                     "type": "string",
-                    "description": "可选，创建路径（相对路径，相对于根目录），默认为当前目录。例如：要在文件夹 'myfolder' 内创建文件，设置 path='myfolder'"
+                    "description": "可选，创建路径（相对路径，相对于根目录，支持..访问上级目录），默认为当前目录。例如：path='myfolder' 或 path='../other_folder'"
                 }
             },
             "required": ["name"]
@@ -241,55 +200,3 @@ def execute_tool_call(tool_call: Dict[str, Any]) -> str:
         return f"错误：工具调用格式不正确 - 缺少字段: {str(e)}"
     except Exception as e:
         return f"错误：执行工具时发生异常 - {str(e)}"
-
-def demo_basic_usage():
-    """
-    演示基本用法
-    """
-    print("=== 文件/文件夹创建工具基本演示 ===\n")
-    
-    # 测试创建文件
-    print("1. 创建空文件 'test_file.txt':")
-    result = create_file_or_folder("test_file.txt", "file")
-    print(f"   结果: {result}\n")
-    
-    # 测试创建文件夹
-    print("2. 创建空文件夹 'test_folder':")
-    result = create_file_or_folder("test_folder", "folder")
-    print(f"   结果: {result}\n")
-    
-    # 测试名称验证
-    print("3. 测试非法名称验证:")
-    test_names = [
-        ("", "空名称"),
-        ("test<file>.txt", "包含非法字符"),
-        ("CON", "系统保留名称"),
-        ("  test  ", "前后空格"),
-    ]
-    
-    for name, description in test_names:
-        is_valid, msg = validate_name(name)
-        print(f"   '{name}' ({description}): {'有效' if is_valid else '无效'} - {msg}")
-    
-    print()
-    
-    # 测试工具调用
-    print("4. 模拟工具调用:")
-    tool_call = {
-        "id": "call_demo_001",
-        "type": "function",
-        "function": {
-            "name": "create_file_or_folder",
-            "arguments": json.dumps({
-                "name": "demo_file.txt",
-                "type": "file",
-                "path": "."
-            })
-        }
-    }
-    result = execute_tool_call(tool_call)
-    print(f"   工具调用结果: {result}")
-
-if __name__ == "__main__":
-    # 运行基本演示
-    demo_basic_usage()

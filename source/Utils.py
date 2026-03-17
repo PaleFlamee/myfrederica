@@ -25,7 +25,7 @@ def general_output_msg_single(msg: Message, is_print: bool = False) -> str:
         tool_id = msg.tool_calls.id# if msg.tool_calls.id else ""
         tool_call_info = f"|{tool_id}|{func_name}|{func_args}"
     
-    output = f"[r:{msg.role}][tcid:{tool_call_id_str}]Opt[tcif:{tool_call_info}][cont]:{msg.content}"
+    output = f"[r:{msg.role}][tcid:{tool_call_id_str}][tkn:{msg.prompt_tokens}|{msg.completion_tokens}]Opt[tcif:{tool_call_info}][cont]:{msg.content}"
     
     if is_print:
         print(output)
