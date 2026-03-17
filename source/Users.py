@@ -269,6 +269,7 @@ class UserManager:
 Summary anything notewothy, write them down to your memory. \
 Also update `users/{self.user_id}-last-conversation-pick-up.md `\
 so that you can easily pick up where you left off when {self.user_id} come back. \
+And, if necessary, update `users/{self.user_id}.md` and `frederica`.\
 After finish all of this, you can say goodbye to {self.user_id}.")])
 
         def new_message(self, incoming_message_queue:List[Message]) -> None:

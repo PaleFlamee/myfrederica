@@ -1,0 +1,18 @@
+{
+  "cron_tasks": [
+    {
+      "id": "example_task_id",
+      "name": "示例任务",
+      "target_user": "ivybridge",
+      "message": "Frederica，收到这条消息说明你在2024年3月12日设置的cron任务被执行了。",
+      "target_time": "2024-03-12 18:00:00",
+      "status": "executed",
+      "created_at": "2024-03-12 10:00:00",
+      "created_by": "system",
+      "executed_at": null,
+      "error_message": ""
+    }
+  ],
+  "version": "1.0",
+  "updated_at": "2026-03-17 15:17:51"
+}

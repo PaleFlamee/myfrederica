@@ -1,12 +1,24 @@
 .env
 
 *.log
-*.json
 
 test_*.py
 
 .vscode/
 
-home/
+home/*
+
+home/memories/*
+!home/memories/.gitkeep
+
+home/sessions/*
+!home/sessions/.gitkeep
+
+home/users/*
+!home/users/.gitkeep
+
+!home/cron.json
+!home/soul
+!home/frederica
 
 __pycache__/
