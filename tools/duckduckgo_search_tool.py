@@ -70,8 +70,8 @@ def duckduckgo_search(query: str, max_results: int = 5) -> str:
             body = result.get('body', '无摘要')
             
             # 限制摘要长度
-            if body and len(body) > 600:
-                body = body[:600] + "..."
+            if body and len(body) > 1024:
+                body = body[:1024] + "..."
             
             formatted_results.append(f"{i}. 标题：{title}")
             formatted_results.append(f"   URL：{url}")
