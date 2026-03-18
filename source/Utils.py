@@ -7,7 +7,6 @@ def general_output_msg_list(msg_list: List[Message], is_print: bool = False) -> 
     """处理消息列表"""
     output: str = ""
     for msg in msg_list:
-        output += "\n"
         output += general_output_msg_single(msg, is_print)
     return output
 
@@ -15,17 +14,17 @@ def general_output_msg_list(msg_list: List[Message], is_print: bool = False) -> 
 def general_output_msg_single(msg: Message, is_print: bool = False) -> str:
     """处理单个消息"""
     # 安全地获取 tool_call_id
-    tool_call_id_str = msg.tool_call_id if msg.tool_call_id else "None"
+    tool_call_id_str = msg.tool_call_id[-5:-1] if msg.tool_call_id else "None"
     
     # 安全地获取 tool_calls 信息
-    tool_call_info = ""
+    tool_call_info:str = "None"
     if msg.tool_calls:
         func_name = msg.tool_calls.function.name# if msg.tool_calls.function else ""
         func_args = msg.tool_calls.function.arguments# if msg.tool_calls.function else ""
-        tool_id = msg.tool_calls.id# if msg.tool_calls.id else ""
-        tool_call_info = f"|{tool_id}|{func_name}|{func_args}"
+        tool_id = msg.tool_calls.id[-5:-1] # if msg.tool_calls.id else ""
+        tool_call_info = f"{tool_id}|{func_name}|{func_args}"
     
-    output = f"[r:{msg.role}][tcid:{tool_call_id_str}][tkn:{msg.prompt_tokens}|{msg.completion_tokens}]Opt[tcif:{tool_call_info}][cont]:{msg.content}"
+    output = f"[r:{msg.role}][tcid:{tool_call_id_str}][tkn:{msg.prompt_tokens}|{msg.completion_tokens}][tcif:{tool_call_info}][cont]:{msg.content}\n"
     
     if is_print:
         print(output)

@@ -142,7 +142,7 @@ class UserManager:
                         
                         # TODO: add exception handling
                         response:Message = get_llm_response(self.chat_history)
-                        logger.debug(f"{self.user_id} 1# response:"); logger.debug(general_output_msg(response))
+                        # logger.debug(f"{self.user_id} 1# response:"); logger.debug(general_output_msg(response))
 
                         self.process_tool_calls(response)
 
@@ -175,22 +175,25 @@ class UserManager:
                 display_message("Assistant", f"{self.user_id} {current_assistant_message.content}")
                 display_message("Tool Call", f"{self.user_id} {current_assistant_message.tool_calls.function.name} & {current_assistant_message.tool_calls.function.arguments}", 2)
                 self.chat_history.append(current_assistant_message) # append & write always together
-                self.session_file.write(f"[{current_assistant_message.role}|tcid:{current_assistant_message.tool_calls.id[-5:-1]}]: {current_assistant_message.content}\n")
-                logger.debug(f"{self.user_id} append ast msg to chat history: "); logger.debug(general_output_msg(current_assistant_message))
+                # self.session_file.write(f"[{current_assistant_message.role}|tcid:{current_assistant_message.tool_calls.id[-5:-1]}]: {current_assistant_message.content}\n")
+                self.session_file.write(general_output_msg(current_assistant_message))
+                logger.debug(f"{self.user_id} append ast msg to chat history: ");# logger.debug(general_output_msg(current_assistant_message))
                 tool_message = self.execute_tools(current_assistant_message.tool_calls)
-                display_message("Tool Response", f"{self.user_id} {tool_message}")
+                display_message("Tool Response", f"{self.user_id} {tool_message.content}")
                 self.chat_history.append(tool_message) # append & write always together
-                self.session_file.write(f"[{tool_message.role}|tcid:{tool_message.tool_call_id[-5:-1]}]: {tool_message.content}\n")
-                logger.debug(f"{self.user_id} append tool msg to chat history: "); logger.debug(general_output_msg(tool_message))
+                # self.session_file.write(f"[{tool_message.role}|tcid:{tool_message.tool_call_id[-5:-1]}]: {tool_message.content}\n")
+                self.session_file.write(general_output_msg(tool_message))
+                logger.debug(f"{self.user_id} append tool msg to chat history: ");# logger.debug(general_output_msg(tool_message))
                 current_assistant_message = get_llm_response(self.chat_history)
-                logger.debug(f"{self.user_id} refresh ast msg:"); logger.debug(general_output_msg(current_assistant_message))
+                # logger.debug(f"{self.user_id} refresh ast msg:"); logger.debug(general_output_msg(current_assistant_message))
                 self.process_tool_calls(current_assistant_message)
             else:
                 logger.debug(f"{self.user_id} no tool calls")
                 display_message("Assistant", f"{self.user_id} {current_assistant_message.content}")
                 self.chat_history.append(current_assistant_message) # append & write, best friends together
-                self.session_file.write(f"[{current_assistant_message.role}|tcid:{current_assistant_message.tool_calls.id[-5:-1] if current_assistant_message.tool_calls else "None"}]: {current_assistant_message.content}\n")
-                logger.debug(f"{self.user_id} append ast msg to chat history: "); logger.debug(general_output_msg(current_assistant_message))
+                # self.session_file.write(f"[{current_assistant_message.role}|tcid:{current_assistant_message.tool_calls.id[-5:-1] if current_assistant_message.tool_calls else "None"}]: {current_assistant_message.content}\n")
+                self.session_file.write(general_output_msg(current_assistant_message))
+                logger.debug(f"{self.user_id} append ast msg to chat history: ");# logger.debug(general_output_msg(current_assistant_message))
 
                 # tool-calls ends here, compress all tool-calls & responses, to compress chat history
                 for index, message in enumerate(self.chat_history):
@@ -281,7 +284,8 @@ After finish all of this, you can say goodbye to {self.user_id}.")])
             # self.last_active_time = datetime.datetime.now()
             self.awaiting_queue.extend(incoming_message_queue) # together we are invincible
             for incoming_message in incoming_message_queue:
-                self.session_file.write(f"[{incoming_message.role}|tcid:{incoming_message.tool_calls.id[-5:-1] if incoming_message.tool_calls else "None"}]: {incoming_message.content}\n")
+                self.session_file.write(general_output_msg(incoming_message))
+                # self.session_file.write(f"[{incoming_message.role}|tcid:{incoming_message.tool_calls.id[-5:-1] if incoming_message.tool_calls else "None"}]: {incoming_message.content}\n")
             logger.info(f"{self.user_id} Add msg to awq, msg count: {len(self.awaiting_queue)}")
             logger.info(f"{self.user_id} Set last active time to {self.last_active_time}")
         
