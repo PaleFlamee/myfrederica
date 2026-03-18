@@ -17,8 +17,8 @@ home/sessions/*
 home/users/*
 !home/users/.gitkeep
 
-!home/cron.json
-!home/soul
-!home/frederica
+home/cron.json
+home/soul
+home/frederica
 
 __pycache__/
