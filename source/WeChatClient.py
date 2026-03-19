@@ -15,6 +15,9 @@ from datetime import datetime, timedelta
 import logging
 logger = logging.getLogger(__name__)
 
+from .Utils import get_config_instance
+config = get_config_instance()
+
 
 class WeChatClient:
     """企业微信客户端（简化版）"""
@@ -24,9 +27,13 @@ class WeChatClient:
         self.logger = logger
         
         # 获取企业微信配置
-        self.corpid = os.getenv("WECHAT_WORK_CORPID")
-        self.corpsecret = os.getenv("WECHAT_WORK_CORPSECRET")
-        self.agentid = os.getenv("WECHAT_WORK_AGENTID")
+        # self.corpid = os.getenv("WECHAT_WORK_CORPID")
+        # self.corpsecret = os.getenv("WECHAT_WORK_CORPSECRET")
+        # self.agentid = os.getenv("WECHAT_WORK_AGENTID")
+        global config
+        self.corpid = config.wechat_work_corpid
+        self.corpsecret = config.wechat_work_corpsecret
+        self.agentid = config.wechat_work_agentid
         
         # access_token缓存
         self.access_token: Optional[str] = None

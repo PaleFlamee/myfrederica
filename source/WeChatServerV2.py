@@ -25,6 +25,9 @@ from .Users import UserManager
 # 使用项目现有的日志系统
 logger = logging.getLogger(__name__)
 
+from .Utils import get_config_instance
+config = get_config_instance()
+
 
 class WeChatServer:
     """
@@ -35,25 +38,38 @@ class WeChatServer:
     def __init__(self, user_mgr_instance: UserManager):
         """初始化服务器"""
         # 从环境变量读取配置
-        self.corpid = os.getenv("WECHAT_WORK_CORPID", "")
-        self.token = os.getenv("WECHAT_WORK_CALLBACK_TOKEN", "")
-        self.encoding_aes_key = os.getenv("WECHAT_WORK_ENCODING_AES_KEY", "")
+        # self.corpid = os.getenv("WECHAT_WORK_CORPID", "")
+        # self.token = os.getenv("WECHAT_WORK_CALLBACK_TOKEN", "")
+        # self.encoding_aes_key = os.getenv("WECHAT_WORK_ENCODING_AES_KEY", "")
+        global config
+        self.corpid = config.wechat_work_corpid
+        self.token = config.wechat_work_callback_token
+        self.encoding_aes_key = config.wechat_work_encoding_aes_key
         
         # 服务器配置
-        self.host = os.getenv("SERVER_HOST", "::")  # 默认使用IPv6双栈
-        self.port = int(os.getenv("SERVER_PORT", "8888"))
+        # self.host = os.getenv("SERVER_HOST", "::")  # 默认使用IPv6双栈
+        # self.port = int(os.getenv("SERVER_PORT", "8888"))
+        self.host = config.server_host
+        self.port = config.server_port
         
         # 性能和安全配置
-        self.max_connections = int(os.getenv("MAX_CONNECTIONS", "100"))  # 最大连接数
-        self.max_concurrent_requests = int(os.getenv("MAX_CONCURRENT_REQUESTS", "50"))  # 最大并发请求
-        self.request_timeout = int(os.getenv("REQUEST_TIMEOUT", "30"))  # 请求超时(秒)
-        self.connection_timeout = int(os.getenv("CONNECTION_TIMEOUT", "10"))  # 连接超时(秒)
-        self.max_request_size = int(os.getenv("MAX_REQUEST_SIZE", "10485760"))  # 最大请求大小(10MB)
-        
+        # self.max_connections = int(os.getenv("MAX_CONNECTIONS", "100"))  # 最大连接数
+        # self.max_concurrent_requests = int(os.getenv("MAX_CONCURRENT_REQUESTS", "50"))  # 最大并发请求
+        # self.request_timeout = int(os.getenv("REQUEST_TIMEOUT", "30"))  # 请求超时(秒)
+        # self.connection_timeout = int(os.getenv("CONNECTION_TIMEOUT", "10"))  # 连接超时(秒)
+        # self.max_request_size = int(os.getenv("MAX_REQUEST_SIZE", "10485760"))  # 最大请求大小(10MB)
+        self.max_connections = config.server_max_connections
+        self.max_concurrent_requests = config.server_concurrent_requests
+        self.connection_timeout = config.server_connection_timeout
+        self.request_timeout = config.server_requset_timeout
+        self.max_request_size = config.server_max_request_size
+
         # 频率限制配置
-        self.rate_limit_window = int(os.getenv("RATE_LIMIT_WINDOW", "60"))  # 时间窗口(秒)
-        self.rate_limit_max = int(os.getenv("RATE_LIMIT_MAX", "100"))  # 最大请求数
-        
+        # self.rate_limit_window = int(os.getenv("RATE_LIMIT_WINDOW", "60"))  # 时间窗口(秒)
+        # self.rate_limit_max = int(os.getenv("RATE_LIMIT_MAX", "100"))  # 最大请求数
+        self.rate_limit_window = config.server_rate_limit_window
+        self.rate_limit_max = config.server_rate_limit_max_requests
+
         # 初始化加密实例
         self.crypto = WeChatCrypto(self.token, self.encoding_aes_key, self.corpid)
         

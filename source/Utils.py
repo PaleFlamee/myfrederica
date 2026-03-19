@@ -1,7 +1,7 @@
 from typing import List, Optional
 from .Message import Message
 import datetime
-
+from .Config import Config
 
 def general_output_msg_list(msg_list: List[Message], is_print: bool = False) -> str:
     """处理消息列表"""
@@ -55,3 +55,10 @@ def add_timestamp_to_msg_list(messages: List[Message]) -> List[Message]:
         message.content = datetime.datetime.now().strftime("<%Y-%m-%d@%H:%M:%S>") + message.content
         msgs_with_timestamp.append(message)
     return msgs_with_timestamp
+
+global_config_inst: Optional[Config] = None
+def get_config_instance() -> Config:
+    global global_config_inst
+    if global_config_inst is None:
+        global_config_inst = Config()
+    return global_config_inst

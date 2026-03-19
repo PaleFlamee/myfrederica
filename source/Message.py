@@ -1,5 +1,5 @@
 from typing import List, Dict, Any, Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -27,7 +27,7 @@ class Message:
     prompt_tokens: Optional[int] = None
     completion_tokens: Optional[int] = None
 
-    tool_calls: Optional[ToolCall] = None  # dpsk的文档没说request有这个字段,还要填东西
+    tool_calls: Optional[ToolCall] = None
     tool_call_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:

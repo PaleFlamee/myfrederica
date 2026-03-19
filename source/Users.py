@@ -4,24 +4,20 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import os
 from time import sleep
-import json
 from .Utils import *
 from .Message import *
 import logging
 logger = logging.getLogger(__name__)
 
 # get env
-load_dotenv()
-LLM_BASE_URL = os.getenv("LLM_BASE_URL")
-LLM_API_KEY = os.getenv("LLM_API_KEY")
-LLM_MODEL = os.getenv("LLM_MODEL")
-LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS"))
-LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE"))
-
-USER_CONVERSATION_EXPIRE_TIMEOUT = datetime.timedelta(minutes=int(os.getenv("USER_CONVERSATION_EXPIRE_TIMEOUT", "5")))
-
-HOME_DIRECTORY = os.getenv("HOME_DIRECTORY", "home")
-SOUL_FILE = os.getenv("SOUL_FILE", "soul")
+config = get_config_instance()
+LLM_API_KEY = config.llm_api_key
+LLM_BASE_URL = config.llm_base_url
+LLM_MODEL = config.llm_model
+LLM_MAX_TOKENS = config.llm_max_tokens
+LLM_TEMPERATURE = config.llm_temperature
+HOME_DIRECTORY = config.home_directory
+USER_CONVERSATION_EXPIRE_TIMEOUT = config.user_conversation_expire_timeout
 
 from tools.list_file_tool import execute_tool_call as execute_list, TOOL_DEFINITION as LIST_TOOL
 from tools.read_file_tool import execute_tool_call as execute_read, TOOL_DEFINITION as READ_TOOL
@@ -33,11 +29,11 @@ from tools.replace_in_file_tool import execute_tool_call as execute_replace, TOO
 from tools.duckduckgo_search_tool import execute_tool_call as execute_duckduckgo, TOOL_DEFINITION as DUCKDUCKGO_TOOL
 from tools.fetch_url_tool import execute_tool_call as execute_fetch_url, TOOL_DEFINITION as FETCH_URL_TOOL
 from tools.execute_command_tool import execute_tool_call as execute_command, TOOL_DEFINITION as EXECUTE_COMMAND_TOOL
-from tools.cron_manage_tool import execute_tool_call as execute_cron_manage, TOOL_DEFINITION as CRON_MANAGE_TOOL_DEF, set_global_cron_manager
+from tools.cron_manage_tool import execute_tool_call as execute_cron_manage, TOOL_DEFINITION as CRON_MANAGE_TOOL
 from tools.search_markdown_tool import execute_tool_call as execute_search_markdown, TOOL_DEFINITION as SEARCH_MARKDOWN_TOOL
 
 TOOLS = [
-    CRON_MANAGE_TOOL_DEF,
+    CRON_MANAGE_TOOL,
     LIST_TOOL,
     READ_TOOL,
     CREATE_TOOL,
@@ -300,7 +296,7 @@ After finish all of this, you can say goodbye to {self.user_id}.")])
         Generic message handler
         '''
         def get_soul_content() -> str:
-            soul_file = open(os.path.join(HOME_DIRECTORY,SOUL_FILE), "r", encoding="utf-8")
+            soul_file = open(os.path.join(HOME_DIRECTORY, "soul"), "r", encoding="utf-8")
             soul_msg:str = soul_file.read()
             soul_file.close()
             return soul_msg
