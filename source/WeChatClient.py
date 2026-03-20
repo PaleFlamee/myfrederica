@@ -27,9 +27,6 @@ class WeChatClient:
         self.logger = logger
         
         # 获取企业微信配置
-        # self.corpid = os.getenv("WECHAT_WORK_CORPID")
-        # self.corpsecret = os.getenv("WECHAT_WORK_CORPSECRET")
-        # self.agentid = os.getenv("WECHAT_WORK_AGENTID")
         global config
         self.corpid = config.wechat_work_corpid
         self.corpsecret = config.wechat_work_corpsecret

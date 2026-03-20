@@ -53,7 +53,7 @@ class CronManager:
                 json.dump(default_data, f, indent=2, ensure_ascii=False)
             logger.info(f"create cron file: {self.cron_file_path}")
         
-        self.check_loop_thread = Thread(target=self.check_loop)
+        self.check_loop_thread = Thread(target=self.check_loop, name="CronCheckLoopThread", daemon=True)
         self.reload_crons()
 
     def start(self):
@@ -135,7 +135,7 @@ class CronManager:
                 cron["status"]="executing"
                 self.save_crons()
 
-                logger.info(f"执行cron任务: {cron['name']} (ID: {cron['id']})")
+                logger.info(f"Execute cron task: {cron['name']} (ID: {cron['id']})")
 
                 execute_cron(self.user_manager, cron)
                 

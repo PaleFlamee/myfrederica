@@ -38,26 +38,16 @@ class WeChatServer:
     def __init__(self, user_mgr_instance: UserManager):
         """初始化服务器"""
         # 从环境变量读取配置
-        # self.corpid = os.getenv("WECHAT_WORK_CORPID", "")
-        # self.token = os.getenv("WECHAT_WORK_CALLBACK_TOKEN", "")
-        # self.encoding_aes_key = os.getenv("WECHAT_WORK_ENCODING_AES_KEY", "")
         global config
         self.corpid = config.wechat_work_corpid
         self.token = config.wechat_work_callback_token
         self.encoding_aes_key = config.wechat_work_encoding_aes_key
         
         # 服务器配置
-        # self.host = os.getenv("SERVER_HOST", "::")  # 默认使用IPv6双栈
-        # self.port = int(os.getenv("SERVER_PORT", "8888"))
         self.host = config.server_host
         self.port = config.server_port
         
         # 性能和安全配置
-        # self.max_connections = int(os.getenv("MAX_CONNECTIONS", "100"))  # 最大连接数
-        # self.max_concurrent_requests = int(os.getenv("MAX_CONCURRENT_REQUESTS", "50"))  # 最大并发请求
-        # self.request_timeout = int(os.getenv("REQUEST_TIMEOUT", "30"))  # 请求超时(秒)
-        # self.connection_timeout = int(os.getenv("CONNECTION_TIMEOUT", "10"))  # 连接超时(秒)
-        # self.max_request_size = int(os.getenv("MAX_REQUEST_SIZE", "10485760"))  # 最大请求大小(10MB)
         self.max_connections = config.server_max_connections
         self.max_concurrent_requests = config.server_concurrent_requests
         self.connection_timeout = config.server_connection_timeout
@@ -65,8 +55,6 @@ class WeChatServer:
         self.max_request_size = config.server_max_request_size
 
         # 频率限制配置
-        # self.rate_limit_window = int(os.getenv("RATE_LIMIT_WINDOW", "60"))  # 时间窗口(秒)
-        # self.rate_limit_max = int(os.getenv("RATE_LIMIT_MAX", "100"))  # 最大请求数
         self.rate_limit_window = config.server_rate_limit_window
         self.rate_limit_max = config.server_rate_limit_max_requests
 
@@ -397,28 +385,28 @@ class WeChatServer:
         await self.site.start()
         
         logger.info(f"""
-        ========================================
-            企业微信回调服务器启动
-        ========================================
-        
-        服务器配置：
-        服务器类型: {server_type}
-        监听地址: {display_host}
-        监听端口: {self.port}
-        
-        性能配置：
-        最大连接数: {self.max_connections}
-        最大并发请求: {self.max_concurrent_requests}
-        请求超时: {self.request_timeout}秒
-        连接超时: {self.connection_timeout}秒
-        
-        回调URL配置：
-        企业微信回调URL: http://你的域名或IP:{self.port}/callback
-        Token: {self.token[:10]}...
-        EncodingAESKey: {self.encoding_aes_key[:10]}...
-        
-        按 Ctrl+C 停止服务器
-        """)
+========================================
+    企业微信回调服务器启动
+========================================
+
+服务器配置：
+服务器类型: {server_type}
+监听地址: {display_host}
+监听端口: {self.port}
+
+性能配置：
+最大连接数: {self.max_connections}
+最大并发请求: {self.max_concurrent_requests}
+请求超时: {self.request_timeout}秒
+连接超时: {self.connection_timeout}秒
+
+回调URL配置：
+企业微信回调URL: http://你的域名或IP:{self.port}/callback
+Token: {self.token[:10]}...
+EncodingAESKey: {self.encoding_aes_key[:10]}...
+
+按 Ctrl+C 停止服务器
+""")
         
         self.is_running = True
         
