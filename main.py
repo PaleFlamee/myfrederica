@@ -2,6 +2,7 @@ from source.Users import *
 from source.WeChatServerV2 import WeChatServer
 from source.CronManagerV2 import CronManager
 from tools.cron_manage_tool import set_tool_cron_manager
+from tools.read_image_tool import set_tool_user_manager
 
 logging.getLogger("openai").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -19,6 +20,7 @@ def main():
     # 创建CronManager并设置全局实例
     cron_manager: CronManager = CronManager(user_manager)
     set_tool_cron_manager(cron_manager)
+    set_tool_user_manager(user_manager)
     
     # 启动CronManager检查线程
     cron_manager.start()

@@ -363,10 +363,10 @@ class WeChatServer:
                                         type="image_url",
                                         image_url=MultimodalContent.Url(url=message.image)
                                     ),
-                                    MultimodalContent(
-                                        type="text",
-                                        text=f"[SYSTEM MESSAGE]{user_id} send an image, image will be downloaded to ./images"
-                                    )
+                                    # MultimodalContent(
+                                    #     type="text",
+                                    #     text=f"[SYSTEM MESSAGE]{user_id} send an image, this image will be saved to ./images"
+                                    # )
                                 ],
                                 role="user"
                             )

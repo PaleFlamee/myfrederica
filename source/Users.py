@@ -32,6 +32,7 @@ from tools.fetch_url_tool import execute_tool_call as execute_fetch_url, TOOL_DE
 from tools.execute_command_tool import execute_tool_call as execute_command, TOOL_DEFINITION as EXECUTE_COMMAND_TOOL
 from tools.cron_manage_tool import execute_tool_call as execute_cron_manage, TOOL_DEFINITION as CRON_MANAGE_TOOL
 from tools.search_markdown_tool import execute_tool_call as execute_search_markdown, TOOL_DEFINITION as SEARCH_MARKDOWN_TOOL
+from tools.read_image_tool import execute_tool_call as execute_read_image, TOOL_DEFINITION as READ_IMAGE_TOOL
 
 TOOLS = [
     CRON_MANAGE_TOOL,
@@ -45,7 +46,8 @@ TOOLS = [
     DUCKDUCKGO_TOOL,
     FETCH_URL_TOOL,
     EXECUTE_COMMAND_TOOL,
-    SEARCH_MARKDOWN_TOOL
+    SEARCH_MARKDOWN_TOOL,
+    READ_IMAGE_TOOL
 ]
 TOOL_EXECUTORS = {
     "cron_manage": execute_cron_manage,
@@ -59,7 +61,8 @@ TOOL_EXECUTORS = {
     "duckduckgo_search": execute_duckduckgo,
     "fetch_url": execute_fetch_url,
     "execute_command": execute_command,
-    "search_markdown_titles": execute_search_markdown
+    "search_markdown_titles": execute_search_markdown,
+    "read_image": execute_read_image
 }
 
 client = OpenAI(
@@ -131,10 +134,17 @@ class UserManager:
             while True:
                 logger.debug(f"{self.user_id} processing loop")
                 while self.is_active or self.is_farewell_caused_active:
-                    if len(self.awaiting_queue) > 0:
+                    if (datetime.datetime.now()-self.last_active_time>=datetime.timedelta(seconds=10)) and (len(self.awaiting_queue) > 0):
                         # if anything in await queue
                         logger.debug(f"{self.user_id} awq msg count:{len(self.awaiting_queue)}")
+
+                        self.merge_messages_awq()
+                        logger.debug(f"{self.user_id} merge msgs done if any")
+
                         self.chat_history.extend(self.awaiting_queue)
+                        for message in self.awaiting_queue:
+                            self.session_file.write(general_output_msg(message))
+
                         self.awaiting_queue = []
                         logger.debug(f"{self.user_id} extended chat history & awq cleared")
                         # logger.debug(f"{self.user_id} chat history:"); logger.debug(general_output_msg_list(self.chat_history))
@@ -150,8 +160,8 @@ class UserManager:
                             logger.info(f"{self.user_id} session file closed")
                             self.is_farewell_caused_active = False # execute only once 
                     else:
-                        # no message in awqueue
-                        logger.debug(f"{self.user_id} no msg in awq")
+                        # no message in awqueue or waiting msg_merge_timeout
+                        logger.debug(f"{self.user_id} no msg in awq or awting merge timeout")
                         if self.is_active and datetime.datetime.now() - self.last_active_time > USER_CONVERSATION_EXPIRE_TIMEOUT:
                             # this block execute only once
                             # stop processing thread
@@ -163,6 +173,16 @@ class UserManager:
                         
                     sleep(1) # gap between active check
                 sleep(1) # for safety
+        
+        def merge_messages_awq(self): # merge (non-multimodal and user) msgs only
+            # merged_content_str:str=""
+            # for message in self.awaiting_queue:
+            #     if message.role != "user":
+            #         pass
+            #     if isinstance(message.content, list):# multimodal
+            #         # 
+            pass
+
         def process_tool_calls(self, current_assistant_message:Message) -> None: # Recursively process tool calls
             # handle new ast msg here
             self.send_message(current_assistant_message)
@@ -283,11 +303,10 @@ After finish all of this, you can say goodbye to {self.user_id}.")])
             # self.is_active = True
             # self.last_active_time = datetime.datetime.now()
             self.awaiting_queue.extend(incoming_message_queue) # together we are invincible
-            for incoming_message in incoming_message_queue:
-                self.session_file.write(general_output_msg(incoming_message))
-                # self.session_file.write(f"[{incoming_message.role}|tcid:{incoming_message.tool_calls.id[-5:-1] if incoming_message.tool_calls else "None"}]: {incoming_message.content}\n")
+            # for incoming_message in incoming_message_queue:
+            #     self.session_file.write(general_output_msg(incoming_message))
             logger.info(f"{self.user_id} Add msg to awq, msg count: {len(self.awaiting_queue)}")
-            logger.info(f"{self.user_id} Set last active time to {self.last_active_time}")
+            # logger.info(f"{self.user_id} Set last active time to {self.last_active_time}")
         
 
     users:Dict[str, User]
@@ -304,7 +323,6 @@ After finish all of this, you can say goodbye to {self.user_id}.")])
             soul_msg:str = soul_file.read()
             soul_file.close()
             return soul_msg
-        
         def get_last_conversation_pick_up(user_id:str) -> str:
             if not os.path.exists(os.path.join(HOME_DIRECTORY, "users",user_id+"-last-conversation-pick-up.md")): # no pick up
                 # create pick up file
@@ -315,7 +333,6 @@ After finish all of this, you can say goodbye to {self.user_id}.")])
                 pick_up_msg:str = pick_up_file.read()
                 pick_up_file.close()
                 return pick_up_msg
-        
         def get_user_memory(user_id:str) -> str:
             if not os.path.exists(os.path.join(HOME_DIRECTORY, "users", f"{user_id}.md")): # no memory
                 # create memory file
@@ -326,7 +343,6 @@ After finish all of this, you can say goodbye to {self.user_id}.")])
                 user_memory_msg:str = user_memory_file.read()
                 user_memory_file.close()
                 return user_memory_msg
-
         def get_frederica_message() -> str:
             frederica_message_file = open(os.path.join(HOME_DIRECTORY, "frederica"), "r", encoding="utf-8")
             frederica_message_content:str = frederica_message_file.read()
