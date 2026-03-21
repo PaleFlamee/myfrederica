@@ -10,7 +10,7 @@ import asyncio
 import logging
 import time
 import threading
-from typing import Dict, Optional, Set
+from typing import Dict, Optional, Set, Tuple
 from urllib.parse import parse_qs
 
 import aiohttp
@@ -19,7 +19,7 @@ from wechatpy.enterprise.crypto import WeChatCrypto
 from wechatpy.enterprise import parse_message
 from wechatpy.enterprise.replies import TextReply
 
-from .Message import Message
+from .Message import Message, MultimodalContent
 from .Users import UserManager
 
 # 使用项目现有的日志系统
@@ -127,6 +127,81 @@ class WeChatServer:
             ]
             if not self.request_counts[ip]:
                 del self.request_counts[ip]
+    
+    async def _download_media_file(self, media_id: str, user_id: str) -> Optional[str]:
+        """
+        后台下载媒体文件（原图）
+        
+        Args:
+            media_id: 媒体文件ID
+            user_id: 用户ID
+            
+        Returns:
+            保存的文件路径，失败返回None
+        """
+        try:
+            # 确保保存目录存在
+            global config
+            save_dir = os.path.join(config.home_directory, "images")
+            os.makedirs(save_dir, exist_ok=True)
+            
+            # 获取 access_token
+            from .WeChatClient import get_wechat_client
+            client = get_wechat_client()
+            access_token = client._get_access_token()
+            
+            if not access_token:
+                logger.error(f"下载媒体文件失败: 无法获取 access_token")
+                return None
+            
+            # 构建下载URL
+            url = f"https://qyapi.weixin.qq.com/cgi-bin/media/get?access_token={access_token}&media_id={media_id}"
+            
+            # 使用 aiohttp 下载文件
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as response:
+                    if response.status != 200:
+                        logger.error(f"下载媒体文件失败: HTTP {response.status}")
+                        return None
+                    
+                    # 检查是否返回了错误JSON
+                    content_type = response.headers.get('Content-Type', '')
+                    if 'application/json' in content_type or 'text/plain' in content_type:
+                        error_data = await response.text()
+                        logger.error(f"下载媒体文件失败: {error_data}")
+                        return None
+                    
+                    # 从 Content-Type 获取文件扩展名
+                    ext = 'jpg'  # 默认扩展名
+                    if 'image/png' in content_type:
+                        ext = 'png'
+                    elif 'image/gif' in content_type:
+                        ext = 'gif'
+                    elif 'image/webp' in content_type:
+                        ext = 'webp'
+                    elif 'image/jpeg' in content_type or 'image/jpg' in content_type:
+                        ext = 'jpg'
+                    
+                    # 生成文件名: {user_id}_{timestamp}_{media_id前8位}.{ext}
+                    timestamp = int(time.time())
+                    media_id_short = media_id[:8] if len(media_id) >= 8 else media_id
+                    filename = f"{user_id}_{timestamp}_{media_id_short}.{ext}"
+                    filepath = os.path.join(save_dir, filename)
+                    
+                    # 保存文件
+                    content = await response.read()
+                    with open(filepath, 'wb') as f:
+                        f.write(content)
+                    
+                    logger.info(f"媒体文件下载成功: {filepath}, 大小: {len(content)} 字节")
+                    return filepath
+                    
+        except asyncio.TimeoutError:
+            logger.error(f"下载媒体文件超时: media_id={media_id}")
+            return None
+        except Exception as e:
+            logger.error(f"下载媒体文件时出错: {e}")
+            return None
     
     async def _handle_get(self, request: web.Request) -> web.Response:
         """处理GET请求（企业微信服务器验证）"""
@@ -268,6 +343,40 @@ class WeChatServer:
                 # 企业微信要求：必须立即返回success，实际回复通过异步方式发送
                 reply = TextReply(
                     content="",  # 空内容，表示已接收
+                    message=message
+                )
+            elif message.type == "image":
+                logger.info(f"Recv image msg, url: {message.image}, id: {message.media_id}")
+                
+                # 启动后台任务下载原图
+                media_id = message.media_id
+                asyncio.create_task(self._download_media_file(media_id, user_id))
+                logger.info(f"已启动后台任务下载原图: media_id={media_id[:8]}...")
+                
+                try:
+                    self.user_mgr.general_handle_new_message(
+                        user_id=user_id,
+                        incoming_message_queue=[
+                            Message(
+                                content=[
+                                    MultimodalContent(
+                                        type="image_url",
+                                        image_url=MultimodalContent.Url(url=message.image)
+                                    ),
+                                    MultimodalContent(
+                                        type="text",
+                                        text=f"[SYSTEM MESSAGE]{user_id} send an image, image will be downloaded to ./images"
+                                    )
+                                ],
+                                role="user"
+                            )
+                        ]
+                    )
+                    
+                except Exception as e:
+                    logger.error(f"Error when adding img msg to {user_id}: {e}")
+                reply = TextReply(
+                    content="",
                     message=message
                 )
                 

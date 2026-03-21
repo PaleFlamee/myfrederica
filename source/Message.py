@@ -1,27 +1,33 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from dataclasses import dataclass
 
 
 @dataclass
 class Function:
-    """工具调用函数"""
     name: str
     arguments: str
 
 
 @dataclass
 class ToolCall:
-    """工具调用"""
     id: str
     type: str = "function"
     function: Optional[Function] = None
 
+@dataclass
+class MultimodalContent:
+    type: str # text | image_url
+    text: Optional[str] = None
+    @dataclass
+    class Url:
+        url:str
+    image_url: Optional[MultimodalContent.Url] = None
 
 @dataclass
 class Message:
-    """消息类"""
     role: str
-    content: str
+    # content: str
+    content: Union[str, List[MultimodalContent]]
 
     # token usage, for recv only
     prompt_tokens: Optional[int] = None
@@ -36,8 +42,27 @@ class Message:
         """
         dicted_message = {
             "role": self.role,
-            "content": self.content
+            "content": []
         }
+        if isinstance(self.content, list):
+            for content in self.content:
+                if content.type == "text":
+                    dicted_message["content"].append({
+                        "type": "text",
+                        "text": content.text
+                    })
+                elif content.type == "image_url":
+                    dicted_message["content"].append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": content.image_url.url
+                        }
+                    })
+        elif isinstance(self.content, str):
+            dicted_message["content"].append({
+                "type": "text",
+                "text": self.content
+            })
         if self.tool_calls:
             dicted_message["tool_calls"] = [{
                 "id": self.tool_calls.id,
@@ -68,6 +93,13 @@ role: assistant
 content: ...
 tcid: None
 tool_calls: None
+
+Assistant Message(Multimodal)
+role: assistant
+content: [
+    {type: text, text: ...},
+    {type: image_url, image_url: {url: ...}}
+]
 
 Tool Call Message:
 role: tool

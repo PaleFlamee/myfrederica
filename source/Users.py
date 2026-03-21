@@ -16,6 +16,7 @@ LLM_BASE_URL = config.llm_base_url
 LLM_MODEL = config.llm_model
 LLM_MAX_TOKENS = config.llm_max_tokens
 LLM_TEMPERATURE = config.llm_temperature
+LLM_ENABLE_THINKING = config.llm_enable_thinking
 HOME_DIRECTORY = config.home_directory
 USER_CONVERSATION_EXPIRE_TIMEOUT = config.user_conversation_expire_timeout
 
@@ -74,7 +75,9 @@ def get_llm_response(chat_history:List[Message]) -> Message:
         temperature = LLM_TEMPERATURE,
         stream = False,
         tools = TOOLS,
-        tool_choice="auto"
+        tool_choice = "auto",
+        # dashscope only
+        extra_body = {"enable_thinking": LLM_ENABLE_THINKING}
     )
     # return response.choices[0].message
     return Message(
@@ -243,6 +246,7 @@ class UserManager:
             from .WeChatClient import get_wechat_client
             wechat_client=get_wechat_client()
             if message.role == "assistant":
+                # message.content only can be a string here
                 content_to_send = message.content
                 segments:List[str] = _parse_segments(content_to_send)
                 # token usage info

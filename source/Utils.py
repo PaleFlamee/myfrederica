@@ -23,8 +23,18 @@ def general_output_msg_single(msg: Message, is_print: bool = False) -> str:
         func_args = msg.tool_calls.function.arguments# if msg.tool_calls.function else ""
         tool_id = msg.tool_calls.id[-5:-1] # if msg.tool_calls.id else ""
         tool_call_info = f"{tool_id}|{func_name}|{func_args}"
+
+    opt_content:str = ""
+    if isinstance(msg.content, str):
+        opt_content = msg.content
+    else:
+        for content in msg.content:
+            if content.type == "text":
+                opt_content += f"<text>{content.text}"
+            elif content.type == "image_url":
+                opt_content += f"<image>{content.image_url.url}"
     
-    output = f"[r:{msg.role}][tcid:{tool_call_id_str}][tkn:{msg.prompt_tokens}|{msg.completion_tokens}][tcif:{tool_call_info}][cont]:{msg.content}\n"
+    output = f"[r:{msg.role}][tcid:{tool_call_id_str}][tkn:{msg.prompt_tokens}|{msg.completion_tokens}][tcif:{tool_call_info}][cont]:{opt_content}\n"
     
     if is_print:
         print(output)
@@ -52,7 +62,12 @@ def display_message(role: str, content: str, indent: int = 0):
 def add_timestamp_to_msg_list(messages: List[Message]) -> List[Message]:
     msgs_with_timestamp: List[Message] = []
     for message in messages:
-        message.content = datetime.datetime.now().strftime("<%Y-%m-%d@%H:%M:%S>") + message.content
+        if isinstance(message.content, str):  # content is a string
+            message.content = datetime.datetime.now().strftime("<%Y-%m-%d@%H:%M:%S>") + message.content
+        else: # content is a list(multimodal)
+            for content in message.content:
+                if content.type == "text":
+                    content.text = datetime.datetime.now().strftime("<%Y-%m-%d@%H:%M:%S>") + content.text
         msgs_with_timestamp.append(message)
     return msgs_with_timestamp
 

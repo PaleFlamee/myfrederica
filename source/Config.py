@@ -12,6 +12,7 @@ class Config:
         self.llm_model: str = os.getenv("LLM_MODEL", "no_llm_model")
         self.llm_max_tokens: int = int(os.getenv("LLM_MAX_TOKENS", "8192"))
         self.llm_temperature: float = float(os.getenv("LLM_TEMPERATURE", "1.5"))
+        self.llm_enable_thinking: bool = bool(os.getenv("LLM_ENABLE_THINKING", "false"))
 
         # users session config
         self.user_conversation_expire_timeout: datetime.timedelta = datetime.timedelta(minutes=int(os.getenv("USER_CONVERSATION_EXPIRE_TIMEOUT", "15")))
