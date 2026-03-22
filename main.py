@@ -39,14 +39,16 @@ def main():
     #     ]
     # )
     
+    # while True:
+    #     msg  = input(">>> ")
+    #     user_manager.general_handle_new_message(
+    #         user_id="ivybridge", 
+    #         incoming_message_queue=[
+    #             Message(content=msg, role="user")
+    #         ]
+    #     )
     while True:
-        msg  = input(">>> ")
-        user_manager.general_handle_new_message(
-            user_id="ivybridge", 
-            incoming_message_queue=[
-                Message(content=msg, role="user")
-            ]
-        )
+        sleep(1)
 
 if __name__ == "__main__":
     main()

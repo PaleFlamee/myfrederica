@@ -218,10 +218,10 @@ class UserManager:
                 for index, message in enumerate(self.chat_history):
                     if message.role == "assistant":
                         if message.tool_calls: # if ast msg & tc exists
-                            self.chat_history[index].tool_calls.function.arguments = (message.tool_calls.function.arguments[0:30] + "[Tool Call Compressed]") if len(message.tool_calls.function.arguments) > 30 else message.tool_calls.function.arguments
+                            self.chat_history[index].tool_calls.function.arguments = f"{{\"Compressed arguments\":\"{message.tool_calls.function.arguments[0:30]}\"}}" if len(message.tool_calls.function.arguments) > 57 else message.tool_calls.function.arguments
                             continue
                     elif message.role == "tool":
-                        self.chat_history[index].content = (message.content[0:30] + "[Tool Response Compressed]" if len(message.content) > 30 else message.content)
+                        self.chat_history[index].content = (message.content[0:30] + "[Compressed]" if len(message.content) > 42 else message.content)
                         continue
                     else:
                         continue

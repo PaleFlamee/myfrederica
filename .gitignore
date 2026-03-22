@@ -17,8 +17,9 @@ home/sessions/*
 home/users/*
 !home/users/.gitkeep
 
-home/images/*
+
 !home/images/.gitkeep
+home/images/*
 
 home/cron.json
 home/soul
