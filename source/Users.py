@@ -184,6 +184,7 @@ class UserManager:
             pass
 
         def process_tool_calls(self, current_assistant_message:Message) -> None: # Recursively process tool calls
+            from json import dumps as json_dumps
             # handle new ast msg here
             self.send_message(current_assistant_message)
 
@@ -218,10 +219,15 @@ class UserManager:
                 for index, message in enumerate(self.chat_history):
                     if message.role == "assistant":
                         if message.tool_calls: # if ast msg & tc exists
-                            self.chat_history[index].tool_calls.function.arguments = f"{{\"Compressed arguments\":\"{message.tool_calls.function.arguments[0:30]}\"}}" if len(message.tool_calls.function.arguments) > 57 else message.tool_calls.function.arguments
+                            if len(message.tool_calls.function.arguments) > 70:
+                                compressed_args = json_dumps({
+                                    "compressed": True,
+                                    "original_length": len(message.tool_calls.function.arguments)
+                                })
+                                self.chat_history[index].tool_calls.function.arguments = compressed_args
                             continue
                     elif message.role == "tool":
-                        self.chat_history[index].content = (message.content[0:30] + "[Compressed]" if len(message.content) > 42 else message.content)
+                        self.chat_history[index].content = (message.content[0:50] + "[Compressed]" if len(message.content) > 70 else message.content)
                         continue
                     else:
                         continue
