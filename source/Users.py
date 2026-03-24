@@ -1,7 +1,6 @@
 from typing import *
 from threading import Thread
 from openai import OpenAI
-from dotenv import load_dotenv
 import os
 from time import sleep
 from .Utils import *
@@ -24,15 +23,15 @@ from tools.list_file_tool import execute_tool_call as execute_list, TOOL_DEFINIT
 from tools.read_file_tool import execute_tool_call as execute_read, TOOL_DEFINITION as READ_TOOL
 from tools.create_file_or_folder_tool import execute_tool_call as execute_create, TOOL_DEFINITION as CREATE_TOOL
 from tools.write_to_file_tool import execute_tool_call as execute_write, TOOL_DEFINITION as WRITE_TOOL
-from tools.search_files_tool import execute_tool_call as execute_search, TOOL_DEFINITION as SEARCH_TOOL
+# from tools.search_files_tool import execute_tool_call as execute_search, TOOL_DEFINITION as SEARCH_TOOL
 from tools.delete_file_or_folder_tool import execute_tool_call as execute_delete, TOOL_DEFINITION as DELETE_TOOL
 from tools.replace_in_file_tool import execute_tool_call as execute_replace, TOOL_DEFINITION as REPLACE_TOOL
-from tools.duckduckgo_search_tool import execute_tool_call as execute_duckduckgo, TOOL_DEFINITION as DUCKDUCKGO_TOOL
-from tools.fetch_url_tool import execute_tool_call as execute_fetch_url, TOOL_DEFINITION as FETCH_URL_TOOL
+from tools.web_search_ali_tool import execute_tool_call as execute_web_search_ali, TOOL_DEFINITION as WEB_SEARCH_ALI_TOOL
+from tools.fetch_url_tool import execute_tool_call as execute_fetch_url_markdown, TOOL_DEFINITION as FETCH_URL_TOOL
 from tools.execute_command_tool import execute_tool_call as execute_command, TOOL_DEFINITION as EXECUTE_COMMAND_TOOL
 from tools.cron_manage_tool import execute_tool_call as execute_cron_manage, TOOL_DEFINITION as CRON_MANAGE_TOOL
 from tools.search_markdown_tool import execute_tool_call as execute_search_markdown, TOOL_DEFINITION as SEARCH_MARKDOWN_TOOL
-from tools.read_image_tool import execute_tool_call as execute_read_image, TOOL_DEFINITION as READ_IMAGE_TOOL
+# from tools.read_image_tool import execute_tool_call as execute_read_image, TOOL_DEFINITION as READ_IMAGE_TOOL
 
 TOOLS = [
     CRON_MANAGE_TOOL,
@@ -40,14 +39,14 @@ TOOLS = [
     READ_TOOL,
     CREATE_TOOL,
     WRITE_TOOL,
-    SEARCH_TOOL,
+    #SEARCH_TOOL,
     DELETE_TOOL,
     REPLACE_TOOL,
-    DUCKDUCKGO_TOOL,
+    WEB_SEARCH_ALI_TOOL,
     FETCH_URL_TOOL,
     EXECUTE_COMMAND_TOOL,
     SEARCH_MARKDOWN_TOOL,
-    READ_IMAGE_TOOL
+    #READ_IMAGE_TOOL
 ]
 TOOL_EXECUTORS = {
     "cron_manage": execute_cron_manage,
@@ -55,14 +54,14 @@ TOOL_EXECUTORS = {
     "read_file": execute_read,
     "create_file_or_folder": execute_create,
     "write_file": execute_write,
-    "search_files": execute_search,
+    #"search_files": execute_search,
     "delete_file_or_folder": execute_delete,
     "replace_in_file": execute_replace,
-    "duckduckgo_search": execute_duckduckgo,
-    "fetch_url": execute_fetch_url,
+    "web_search_ali": execute_web_search_ali,
+    "fetch_url_markdown": execute_fetch_url_markdown,
     "execute_command": execute_command,
     "search_markdown_titles": execute_search_markdown,
-    "read_image": execute_read_image
+    #"read_image": execute_read_image
 }
 
 client = OpenAI(
@@ -107,6 +106,11 @@ class UserManager:
         def __init__(self, user_id):
             logger.info(f"Creating user {user_id}")
             self.user_id = user_id
+            if os.path.exists(os.path.join(HOME_DIRECTORY, user_id)) == False:
+                os.mkdir(os.path.join(HOME_DIRECTORY, user_id))
+                os.mkdir(os.path.join(HOME_DIRECTORY, user_id, "sessions"))
+                os.mkdir(os.path.join(HOME_DIRECTORY, user_id, "memories"))
+                os.mkdir(os.path.join(HOME_DIRECTORY, user_id, "images"))
             self.processing_thread = Thread(
                 target=self.process_loop,
                 daemon=True
@@ -122,7 +126,7 @@ class UserManager:
             self.is_active = True
             self.is_farewell_caused_active = False
             self.session_file = open(
-                os.path.join(HOME_DIRECTORY, "sessions", f"{self.user_id}.{self.last_active_time.strftime("%Y-%m-%d.%H-%M-%S")}.txt"),
+                os.path.join(HOME_DIRECTORY, self.user_id, "sessions", f"{self.user_id}.{self.last_active_time.strftime("%Y-%m-%d.%H-%M-%S")}.txt"),
                 "a",
                 encoding="utf-8",
                 buffering=1
@@ -295,10 +299,10 @@ class UserManager:
             self.new_message([Message(role="user", content=f"\
 [SYSTEM MESSAGE]\
 {self.user_id} has been in silence for {USER_CONVERSATION_EXPIRE_TIMEOUT}. \
-Summary anything notewothy, write them down to your memory. \
-Also update `users/{self.user_id}-last-conversation-pick-up.md `\
+Summary anything notewothy, write them down to your memory about {self.user_id} ({self.user_id}/memories). \
+Also update `{self.user_id}/{self.user_id}-last-conversation-pick-up.md `\
 so that you can easily pick up where you left off when {self.user_id} come back. \
-And, if necessary, update `users/{self.user_id}.md` and `frederica`.\
+And, if necessary, update `{self.user_id}/{self.user_id}.md` and `frederica`.\
 After finish all of this, you can say goodbye to {self.user_id}.")])
 
         def new_message(self, incoming_message_queue:List[Message]) -> None:
@@ -325,35 +329,45 @@ After finish all of this, you can say goodbye to {self.user_id}.")])
         Generic message handler
         '''
         def get_soul_content() -> str:
-            soul_file = open(os.path.join(HOME_DIRECTORY, "soul"), "r", encoding="utf-8")
-            soul_msg:str = soul_file.read()
-            soul_file.close()
-            return soul_msg
-        def get_last_conversation_pick_up(user_id:str) -> str:
-            if not os.path.exists(os.path.join(HOME_DIRECTORY, "users",user_id+"-last-conversation-pick-up.md")): # no pick up
-                # create pick up file
-                open(os.path.join(HOME_DIRECTORY, "users",user_id+"-last-conversation-pick-up.md"), "w", encoding="utf-8").close()
+            if not os.path.exists(os.path.join(HOME_DIRECTORY, "soul")): # no soul
+                # create soul file
+                open(os.path.join(HOME_DIRECTORY, "soul"), "w", encoding="utf-8").close()
                 return "None"
             else:
-                pick_up_file = open(os.path.join(HOME_DIRECTORY, "users",user_id+"-last-conversation-pick-up.md"), "r", encoding="utf-8")
+                soul_file = open(os.path.join(HOME_DIRECTORY, "soul"), "r", encoding="utf-8")
+                soul_msg:str = soul_file.read()
+                soul_file.close()
+                return soul_msg 
+        def get_last_conversation_pick_up(user_id:str) -> str:
+            if not os.path.exists(os.path.join(HOME_DIRECTORY, user_id,user_id+"-last-conversation-pick-up.md")): # no pick up
+                # create pick up file
+                open(os.path.join(HOME_DIRECTORY, user_id, user_id+"-last-conversation-pick-up.md"), "w", encoding="utf-8").close()
+                return "None"
+            else:
+                pick_up_file = open(os.path.join(HOME_DIRECTORY, user_id,user_id+"-last-conversation-pick-up.md"), "r", encoding="utf-8")
                 pick_up_msg:str = pick_up_file.read()
                 pick_up_file.close()
                 return pick_up_msg
         def get_user_memory(user_id:str) -> str:
-            if not os.path.exists(os.path.join(HOME_DIRECTORY, "users", f"{user_id}.md")): # no memory
+            if not os.path.exists(os.path.join(HOME_DIRECTORY, user_id, f"{user_id}.md")): # no memory
                 # create memory file
-                open(os.path.join(HOME_DIRECTORY, "users", f"{user_id}.md"), "w", encoding="utf-8").close()
+                open(os.path.join(HOME_DIRECTORY, user_id, f"{user_id}.md"), "w", encoding="utf-8").close()
                 return "None"
             else:
-                user_memory_file = open(os.path.join(HOME_DIRECTORY, "users", f"{user_id}.md"), "r", encoding="utf-8")
+                user_memory_file = open(os.path.join(HOME_DIRECTORY, user_id, f"{user_id}.md"), "r", encoding="utf-8")
                 user_memory_msg:str = user_memory_file.read()
                 user_memory_file.close()
                 return user_memory_msg
         def get_frederica_message() -> str:
-            frederica_message_file = open(os.path.join(HOME_DIRECTORY, "frederica"), "r", encoding="utf-8")
-            frederica_message_content:str = frederica_message_file.read()
-            frederica_message_file.close()
-            return frederica_message_content
+            if not os.path.exists(os.path.join(HOME_DIRECTORY, "frederica")): # no frederica
+                # create frederica file
+                open(os.path.join(HOME_DIRECTORY, "frederica"), "w", encoding="utf-8").close()
+                return "None"
+            else:
+                frederica_message_file = open(os.path.join(HOME_DIRECTORY, "frederica"), "r", encoding="utf-8")
+                frederica_message_content:str = frederica_message_file.read()
+                frederica_message_file.close()
+                return frederica_message_content
         
         incoming_message_queue = add_timestamp_to_msg_list(incoming_message_queue)
 

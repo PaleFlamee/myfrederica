@@ -142,7 +142,7 @@ class WeChatServer:
         try:
             # 确保保存目录存在
             global config
-            save_dir = os.path.join(config.home_directory, "images")
+            save_dir = os.path.join(config.home_directory, user_id, "images")
             os.makedirs(save_dir, exist_ok=True)
             
             # 获取 access_token

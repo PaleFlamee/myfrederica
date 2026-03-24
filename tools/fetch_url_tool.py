@@ -183,7 +183,7 @@ def _is_valid_url(url: str) -> bool:
 TOOL_DEFINITION = {
     "type": "function",
     "function": {
-        "name": "fetch_url",
+        "name": "fetch_url_markdown",
         "description": "使用Jina Reader API获取网页内容并转换为Markdown格式。返回提取的网页内容，包含标题和主要内容。",
         "parameters": {
             "type": "object",
@@ -236,7 +236,7 @@ def execute_tool_call(tool_call: Dict[str, Any]) -> str:
         arguments = json.loads(arguments_str)
         
         # 验证工具名称
-        if function_name != "fetch_url":
+        if function_name != "fetch_url_markdown":
             return f"错误：未知的工具 '{function_name}'"
         
         # 提取参数

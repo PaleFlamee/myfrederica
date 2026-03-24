@@ -8,20 +8,4 @@ test_*.py
 
 home/*
 
-home/memories/*
-!home/memories/.gitkeep
-
-home/sessions/*
-!home/sessions/.gitkeep
-
-home/users/*
-!home/users/.gitkeep
-
-home/images/*
-!home/images/.gitkeep
-
-home/cron.json
-home/soul
-home/frederica
-
 __pycache__/
