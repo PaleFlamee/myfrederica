@@ -8,6 +8,7 @@ from threading import Thread
 from .Message import Message
 from .Utils import get_config_instance
 import hashlib
+from threading import Lock
 
 logger = getLogger(__name__)
 config = get_config_instance()
@@ -41,6 +42,7 @@ class CronManager:
         self.crons: List[Dict[str, Any]] = []
         self.running = False
         self.check_loop_thread: Optional[Thread] = None
+        self.lock = Lock()
         
         # ensure cron file exists
         if not os.path.exists(self.cron_file_path):
@@ -66,6 +68,10 @@ class CronManager:
             sleep(30)
 
     def reload_crons(self):
+        with self.lock:
+            self.reload_crons_unsafe()
+
+    def reload_crons_unsafe(self):
         try:
             with open(self.cron_file_path, 'r', encoding='utf-8') as f:
                 self.crons = json.load(f)["crons"]
@@ -74,11 +80,16 @@ class CronManager:
             self.crons = []
 
     def save_crons(self):
+        with self.lock:
+            self.save_crons_unsafe()
+
+    def save_crons_unsafe(self):
         try:
             with open(self.cron_file_path, 'w', encoding='utf-8') as f:
                 json.dump({"crons": self.crons}, f, ensure_ascii=False, indent=1)
         except Exception as e:
             logger.error(f"save cron failed: {e}")
+        
 
     
     def find_crons(self, status_filter:Optional[str] = None, user_filter:Optional[str]=None) -> List[Dict[str, Any]]:
@@ -93,26 +104,27 @@ class CronManager:
             return [cron for cron in self.crons if cron["target_user"] == user_filter]
     
     def delete_cron(self, name: Optional[str], id: Optional[str]) -> bool:
-        self.reload_crons()
-        if name and id:
-            for cron in self.crons:
-                if cron["name"] == name and cron["id"] == id:
-                    self.crons.remove(cron)
-                    self.save_crons()
-                    return True
-        elif name:
-            for cron in self.crons:
-                if cron["name"] == name:
-                    self.crons.remove(cron)
-                    self.save_crons()
-                    return True
-        elif id:
-            for cron in self.crons:
-                if cron["id"] == id:
-                    self.crons.remove(cron)
-                    self.save_crons()
-                    return True
-        return False
+        with self.lock:
+            self.reload_crons_unsafe()
+            if name and id:
+                for cron in self.crons:
+                    if cron["name"] == name and cron["id"] == id:
+                        self.crons.remove(cron)
+                        self.save_crons_unsafe()
+                        return True
+            elif name:
+                for cron in self.crons:
+                    if cron["name"] == name:
+                        self.crons.remove(cron)
+                        self.save_crons_unsafe()
+                        return True
+            elif id:
+                for cron in self.crons:
+                    if cron["id"] == id:
+                        self.crons.remove(cron)
+                        self.save_crons_unsafe()
+                        return True
+            return False
 
     def check_and_execute_crons(self):
         def execute_cron(user_manager, cron:Dict[str, Any]) -> None:
@@ -122,32 +134,34 @@ class CronManager:
                     Message(content="[CRON MESSAGE]"+cron["message"], role="user")
                 ]
             )
-        self.reload_crons()
-        current_time = datetime.now()
-        
-        for cron in self.crons:
-            if cron["status"] != "pending":
-                continue
 
-            target_time = datetime.strptime(cron["target_time"], "%Y-%m-%d %H:%M:%S")
+        with self.lock:
+            self.reload_crons_unsafe()
+            current_time = datetime.now()
             
-            if current_time >= target_time:
-                cron["status"]="executing"
-                self.save_crons()
+            for cron in self.crons:
+                if cron["status"] != "pending":
+                    continue
 
-                logger.info(f"Execute cron task: {cron['name']} (ID: {cron['id']})")
-
-                execute_cron(self.user_manager, cron)
+                target_time = datetime.strptime(cron["target_time"], "%Y-%m-%d %H:%M:%S")
                 
-                cron["last_executed_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                if cron["repeat"] == "daily":
-                    cron["target_time"] = (target_time + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
-                    cron["status"]="pending"
-                else:
-                    cron["target_time"] = None
-                    cron["status"] = "executed_disabled"
-                self.save_crons()
-                continue
+                if current_time >= target_time:
+                    cron["status"]="executing"
+                    self.save_crons_unsafe()
+
+                    logger.info(f"Execute cron task: {cron['name']} (ID: {cron['id']})")
+
+                    execute_cron(self.user_manager, cron)
+                    
+                    cron["last_executed_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    if cron["repeat"] == "daily":
+                        cron["target_time"] = (target_time + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+                        cron["status"]="pending"
+                    else:
+                        cron["target_time"] = None
+                        cron["status"] = "executed_disabled"
+                    self.save_crons_unsafe()
+                    continue
 
     def add_cron(self, 
                  name: str, 
@@ -156,25 +170,26 @@ class CronManager:
                  target_time: str, 
                  repeat: str = "never", 
                  created_by: str = "system") -> str:
-        self.reload_crons()
-        if name in [cron["name"] for cron in self.crons]:
-            return "Add cron failed. Cron task name already exists."
-        id = hashlib.md5(f"{name}{target_user}{target_time}{message}".encode("utf-8")).hexdigest()[:12]
-        self.crons.append({
-            "id": id,
-            "name": name,
-            "target_user": target_user,
-            "message": message,
-            "target_time": target_time,
-            "status": "pending",
-            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "created_by": created_by,
-            "last_executed_at": None,
-            "error_message": None,
-            "repeat": repeat
-        })
-        self.save_crons()
-        return f"Add cron success. Task ID: {id}."
+        with self.lock:
+            self.reload_crons_unsafe()
+            if name in [cron["name"] for cron in self.crons]:
+                return "Add cron failed. Cron task name already exists."
+            id = hashlib.md5(f"{name}{target_user}{target_time}{message}".encode("utf-8")).hexdigest()[:12]
+            self.crons.append({
+                "id": id,
+                "name": name,
+                "target_user": target_user,
+                "message": message,
+                "target_time": target_time,
+                "status": "pending",
+                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "created_by": created_by,
+                "last_executed_at": None,
+                "error_message": None,
+                "repeat": repeat
+            })
+            self.save_crons_unsafe()
+            return f"Add cron success. Task ID: {id}."
     
 
   

@@ -1,5 +1,5 @@
 from typing import *
-from threading import Thread
+from threading import Thread, Lock
 from openai import OpenAI
 import os
 from time import sleep
@@ -98,6 +98,7 @@ class UserManager:
         user_id:str
         chat_history:List[Message]
         awaiting_queue:List[Message]
+        awq_lock:Lock
         last_active_time:datetime
         is_active:bool
         is_farewell_caused_active:bool
@@ -106,6 +107,7 @@ class UserManager:
         def __init__(self, user_id):
             logger.info(f"Creating user {user_id}")
             self.user_id = user_id
+            self.awq_lock = Lock()
             if os.path.exists(os.path.join(HOME_DIRECTORY, user_id)) == False:
                 os.mkdir(os.path.join(HOME_DIRECTORY, user_id))
                 os.mkdir(os.path.join(HOME_DIRECTORY, user_id, "sessions"))
@@ -121,7 +123,8 @@ class UserManager:
 
         def self_reset_active(self) -> None:
             self.chat_history = []
-            self.awaiting_queue = []
+            with self.awq_lock:
+                self.awaiting_queue = []
             self.last_active_time = datetime.datetime.now()
             self.is_active = True
             self.is_farewell_caused_active = False
@@ -139,19 +142,21 @@ class UserManager:
                 logger.debug(f"{self.user_id} processing loop")
                 while self.is_active or self.is_farewell_caused_active:
                     if (datetime.datetime.now()-self.last_active_time>=datetime.timedelta(seconds=10)) and (len(self.awaiting_queue) > 0):
-                        # if anything in await queue
-                        logger.debug(f"{self.user_id} awq msg count:{len(self.awaiting_queue)}")
+                        
+                        with self.awq_lock:
+                            # if anything in await queue
+                            logger.debug(f"{self.user_id} awq msg count:{len(self.awaiting_queue)}")
 
-                        self.merge_messages_awq()
-                        logger.debug(f"{self.user_id} merge msgs done if any")
+                            self.merge_messages_awq()
+                            logger.debug(f"{self.user_id} merge msgs done if any")
 
-                        self.chat_history.extend(self.awaiting_queue)
-                        for message in self.awaiting_queue:
-                            self.session_file.write(general_output_msg(message))
+                            self.chat_history.extend(self.awaiting_queue)
+                            for message in self.awaiting_queue:
+                                self.session_file.write(general_output_msg(message))
 
-                        self.awaiting_queue = []
-                        logger.debug(f"{self.user_id} extended chat history & awq cleared")
-                        # logger.debug(f"{self.user_id} chat history:"); logger.debug(general_output_msg_list(self.chat_history))
+                            self.awaiting_queue = []
+                            logger.debug(f"{self.user_id} extended chat history & awq cleared")
+                            # logger.debug(f"{self.user_id} chat history:"); logger.debug(general_output_msg_list(self.chat_history))
                         
                         # TODO: add exception handling
                         response:Message = get_llm_response(self.chat_history)
@@ -276,13 +281,20 @@ class UserManager:
             from .WeChatClient import get_wechat_client
             wechat_client=get_wechat_client()
             if message.role == "assistant":
+                if not message.content and self.user_id!="ivybridge":
+                    # if not ivybridge, ignore empty assistant message
+                    return
                 # message.content only can be a string here
                 content_to_send = message.content
                 segments:List[str] = _parse_segments(content_to_send)
-                # token usage info
-                segments[0] += f"\n---\nToken Usage: {message.prompt_tokens} in, {message.completion_tokens} out\n"
-                if message.tool_calls:
-                    segments[0] += f"Tool Call: {message.tool_calls.function.name}"
+
+                if self.user_id == "ivybridge":
+                    # token usage info
+                    segments[0] += f"\n---\nToken Usage: {message.prompt_tokens} in, {message.completion_tokens} out\n"
+                    if message.tool_calls:
+                        segments[0] += f"Tool Call: {message.tool_calls.function.name}"
+                
+                
                 if len(segments) > 1:
                     wechat_client.send_messages(self.user_id, segments)
                 else:
@@ -310,13 +322,9 @@ After finish all of this, you can say goodbye to {self.user_id}.")])
             basic message handler, can be used either by UserManager.general_handle_new_message()
             or by self.new_message()
             '''
-            # self.is_active = True
-            # self.last_active_time = datetime.datetime.now()
-            self.awaiting_queue.extend(incoming_message_queue) # together we are invincible
-            # for incoming_message in incoming_message_queue:
-            #     self.session_file.write(general_output_msg(incoming_message))
-            logger.info(f"{self.user_id} Add msg to awq, msg count: {len(self.awaiting_queue)}")
-            # logger.info(f"{self.user_id} Set last active time to {self.last_active_time}")
+            with self.awq_lock:
+                self.awaiting_queue.extend(incoming_message_queue)
+                logger.info(f"{self.user_id} Add msg to awq, msg count: {len(self.awaiting_queue)}")
         
 
     users:Dict[str, User]
