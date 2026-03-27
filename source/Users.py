@@ -2,9 +2,11 @@ from typing import *
 from threading import Thread, Lock
 from openai import OpenAI
 import os
+import json
 from time import sleep
 from .Utils import *
 from .Message import *
+from .MCPClient import ToolRegistry
 import logging
 logger = logging.getLogger(__name__)
 
@@ -19,51 +21,52 @@ LLM_ENABLE_THINKING = config.llm_enable_thinking
 HOME_DIRECTORY = config.home_directory
 USER_CONVERSATION_EXPIRE_TIMEOUT = config.user_conversation_expire_timeout
 
-from tools.list_file_tool import execute_tool_call as execute_list, TOOL_DEFINITION as LIST_TOOL
-from tools.read_file_tool import execute_tool_call as execute_read, TOOL_DEFINITION as READ_TOOL
-from tools.create_file_or_folder_tool import execute_tool_call as execute_create, TOOL_DEFINITION as CREATE_TOOL
-from tools.write_to_file_tool import execute_tool_call as execute_write, TOOL_DEFINITION as WRITE_TOOL
-# from tools.search_files_tool import execute_tool_call as execute_search, TOOL_DEFINITION as SEARCH_TOOL
-from tools.delete_file_or_folder_tool import execute_tool_call as execute_delete, TOOL_DEFINITION as DELETE_TOOL
-from tools.replace_in_file_tool import execute_tool_call as execute_replace, TOOL_DEFINITION as REPLACE_TOOL
-from tools.web_search_ali_tool import execute_tool_call as execute_web_search_ali, TOOL_DEFINITION as WEB_SEARCH_ALI_TOOL
-from tools.fetch_url_tool import execute_tool_call as execute_fetch_url_markdown, TOOL_DEFINITION as FETCH_URL_TOOL
-from tools.execute_command_tool import execute_tool_call as execute_command, TOOL_DEFINITION as EXECUTE_COMMAND_TOOL
-from tools.cron_manage_tool import execute_tool_call as execute_cron_manage, TOOL_DEFINITION as CRON_MANAGE_TOOL
-from tools.search_markdown_tool import execute_tool_call as execute_search_markdown, TOOL_DEFINITION as SEARCH_MARKDOWN_TOOL
-# from tools.read_image_tool import execute_tool_call as execute_read_image, TOOL_DEFINITION as READ_IMAGE_TOOL
+# from tools.list_file_tool import execute_tool_call as execute_list, TOOL_DEFINITION as LIST_TOOL
+# from tools.read_file_tool import execute_tool_call as execute_read, TOOL_DEFINITION as READ_TOOL
+# from tools.create_file_or_folder_tool import execute_tool_call as execute_create, TOOL_DEFINITION as CREATE_TOOL
+# from tools.write_to_file_tool import execute_tool_call as execute_write, TOOL_DEFINITION as WRITE_TOOL
+# # from tools.search_files_tool import execute_tool_call as execute_search, TOOL_DEFINITION as SEARCH_TOOL
+# from tools.delete_file_or_folder_tool import execute_tool_call as execute_delete, TOOL_DEFINITION as DELETE_TOOL
+# from tools.replace_in_file_tool import execute_tool_call as execute_replace, TOOL_DEFINITION as REPLACE_TOOL
+# from tools.web_search_ali_tool import execute_tool_call as execute_web_search_ali, TOOL_DEFINITION as WEB_SEARCH_ALI_TOOL
+# from tools.fetch_url_tool import execute_tool_call as execute_fetch_url_markdown, TOOL_DEFINITION as FETCH_URL_TOOL
+# from tools.execute_command_tool import execute_tool_call as execute_command, TOOL_DEFINITION as EXECUTE_COMMAND_TOOL
+# from tools.cron_manage_tool import execute_tool_call as execute_cron_manage, TOOL_DEFINITION as CRON_MANAGE_TOOL
+# from tools.search_markdown_tool import execute_tool_call as execute_search_markdown, TOOL_DEFINITION as SEARCH_MARKDOWN_TOOL
+# # from tools.read_image_tool import execute_tool_call as execute_read_image, TOOL_DEFINITION as READ_IMAGE_TOOL
 
-TOOLS = [
-    CRON_MANAGE_TOOL,
-    LIST_TOOL,
-    READ_TOOL,
-    CREATE_TOOL,
-    WRITE_TOOL,
-    #SEARCH_TOOL,
-    DELETE_TOOL,
-    REPLACE_TOOL,
-    WEB_SEARCH_ALI_TOOL,
-    FETCH_URL_TOOL,
-    EXECUTE_COMMAND_TOOL,
-    SEARCH_MARKDOWN_TOOL,
-    #READ_IMAGE_TOOL
-]
-TOOL_EXECUTORS = {
-    "cron_manage": execute_cron_manage,
-    "list_files": execute_list,
-    "read_file": execute_read,
-    "create_file_or_folder": execute_create,
-    "write_file": execute_write,
-    #"search_files": execute_search,
-    "delete_file_or_folder": execute_delete,
-    "replace_in_file": execute_replace,
-    "web_search_ali": execute_web_search_ali,
-    "fetch_url_markdown": execute_fetch_url_markdown,
-    "execute_command": execute_command,
-    "search_markdown_titles": execute_search_markdown,
-    #"read_image": execute_read_image
-}
-
+# TOOLS = [
+#     CRON_MANAGE_TOOL,
+#     LIST_TOOL,
+#     READ_TOOL,
+#     CREATE_TOOL,
+#     WRITE_TOOL,
+#     #SEARCH_TOOL,
+#     DELETE_TOOL,
+#     REPLACE_TOOL,
+#     WEB_SEARCH_ALI_TOOL,
+#     FETCH_URL_TOOL,
+#     EXECUTE_COMMAND_TOOL,
+#     SEARCH_MARKDOWN_TOOL,
+#     #READ_IMAGE_TOOL
+# ]
+# TOOL_EXECUTORS = {
+#     "cron_manage": execute_cron_manage,
+#     "list_files": execute_list,
+#     "read_file": execute_read,
+#     "create_file_or_folder": execute_create,
+#     "write_file": execute_write,
+#     #"search_files": execute_search,
+#     "delete_file_or_folder": execute_delete,
+#     "replace_in_file": execute_replace,
+#     "web_search_ali": execute_web_search_ali,
+#     "fetch_url_markdown": execute_fetch_url_markdown,
+#     "execute_command": execute_command,
+#     "search_markdown_titles": execute_search_markdown,
+#     #"read_image": execute_read_image
+# }
+tool_registry = ToolRegistry()
+tools = tool_registry.get_tools()
 client = OpenAI(
     api_key = LLM_API_KEY,
     base_url = LLM_BASE_URL
@@ -76,7 +79,7 @@ def get_llm_response(chat_history:List[Message]) -> Message:
         max_tokens = LLM_MAX_TOKENS,
         temperature = LLM_TEMPERATURE,
         stream = False,
-        tools = TOOLS,
+        tools = tools,
         tool_choice = "auto",
         # dashscope only
         extra_body = {"enable_thinking": LLM_ENABLE_THINKING}
@@ -248,15 +251,8 @@ class UserManager:
             """Execute the tools called by the LLM."""
             logger.debug(f"{self.user_id} Executing tools...")
             
-            dicted_tool_call = {
-                "id": tool_calls.id,
-                "type": "function",
-                "function": {
-                    "name": tool_calls.function.name,
-                    "arguments": tool_calls.function.arguments
-                }
-            }
-            tool_response = TOOL_EXECUTORS[dicted_tool_call["function"]["name"]](dicted_tool_call)
+            args_dict = json.loads(tool_calls.function.arguments)
+            tool_response = tool_registry.execute(tool_calls.function.name, args_dict)
             logger.debug(f"{self.user_id} tool executed, cont:"); logger.debug(tool_response)
             return Message(
                 role="tool", 
@@ -296,7 +292,7 @@ class UserManager:
                 
                 
                 if len(segments) > 1:
-                    wechat_client.send_messages(self.user_id, segments)
+                    wechat_client.send_text_messages(self.user_id, segments)
                 else:
                     wechat_client.send_text_message(self.user_id, segments[0])
             elif message.role == "tool":

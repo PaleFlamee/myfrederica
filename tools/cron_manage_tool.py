@@ -28,7 +28,7 @@ def get_global_cron_manager():
     return _global_cron_manager
 
 
-def cron_manage_tool_execute(tool_call: Dict[str, Any]) -> str:
+def cron_manage_tool_execute(function_name:str, arguments:dict) -> str:
     """
     Cron任务管理工具
     支持create、delete、list操作
@@ -41,9 +41,9 @@ def cron_manage_tool_execute(tool_call: Dict[str, Any]) -> str:
     """
     try:
         # 解析参数
-        function_name = tool_call["function"]["name"]
-        arguments_str = tool_call["function"]["arguments"]
-        arguments = json.loads(arguments_str)
+        # function_name = tool_call["function"]["name"]
+        # arguments_str = tool_call["function"]["arguments"]
+        # arguments = json.loads(arguments_str)
         
         # 验证工具名称
         if function_name != "cron_manage":
@@ -238,7 +238,7 @@ TOOL_DEFINITION = {
 }
 
 
-def execute_tool_call(tool_call: Dict[str, Any]) -> str:
+def execute_tool_call(name:str, arguments_dict:dict) -> str:
     """
     执行工具调用（兼容现有工具系统）
     
@@ -248,7 +248,7 @@ def execute_tool_call(tool_call: Dict[str, Any]) -> str:
     Returns:
         str: 工具执行结果
     """
-    return cron_manage_tool_execute(tool_call)
+    return cron_manage_tool_execute(name, arguments_dict)
 
 
 if __name__ == "__main__":
