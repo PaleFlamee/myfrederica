@@ -211,34 +211,8 @@ TOOL_DEFINITION = {
     }
 }
 
-def execute_tool_call(tool_call: Dict[str, Any]) -> str:
-    """
-    执行工具调用
-    
-    Args:
-        tool_call: 包含工具调用信息的字典，格式为：
-            {
-                "id": "call_123",
-                "type": "function",
-                "function": {
-                    "name": "fetch_url",
-                    "arguments": "{\"url\": \"https://example.com\", \"max_length\": 1000}"
-                }
-            }
-    
-    Returns:
-        str: 工具执行结果
-    """
+def execute_tool_call(arguments:dict) -> str:
     try:
-        # 解析参数
-        function_name = tool_call["function"]["name"]
-        arguments_str = tool_call["function"]["arguments"]
-        arguments = json.loads(arguments_str)
-        
-        # 验证工具名称
-        if function_name != "fetch_url_markdown":
-            return f"错误：未知的工具 '{function_name}'"
-        
         # 提取参数
         url = arguments.get("url")
         output_format = arguments.get("output_format", "markdown")

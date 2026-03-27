@@ -103,34 +103,8 @@ TOOL_DEFINITION = {
     }
 }
 
-def execute_tool_call(tool_call: Dict[str, Any]) -> str:
-    """
-    执行工具调用
-    
-    Args:
-        tool_call: 包含工具调用信息的字典，格式为：
-            {
-                "id": "call_123",
-                "type": "function",
-                "function": {
-                    "name": "write_file",
-                    "arguments": "{\"path\": \"test.txt\", \"content\": \"Hello World\"}"
-                }
-            }
-    
-    Returns:
-        str: 工具执行结果
-    """
+def execute_tool_call(arguments:dict) -> str:
     try:
-        # 解析参数
-        function_name = tool_call["function"]["name"]
-        arguments_str = tool_call["function"]["arguments"]
-        arguments = json.loads(arguments_str)
-        
-        # 验证工具名称
-        if function_name != "write_file":
-            return f"错误：未知的工具 '{function_name}'"
-        
         # 提取参数
         path = arguments.get("path")
         content = arguments.get("content")

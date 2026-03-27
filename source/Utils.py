@@ -32,7 +32,7 @@ def general_output_msg_single(msg: Message, is_print: bool = False) -> str:
             if content.type == "text":
                 opt_content += f"<text>{content.text}"
             elif content.type == "image_url":
-                opt_content += f"<image>{content.image_url.url}"
+                opt_content += f"<image>{content.image_url.url[:20]}..."
     
     output = f"[r:{msg.role}][tcid:{tool_call_id_str}][tkn:{msg.prompt_tokens}|{msg.completion_tokens}][tcif:{tool_call_info}][cont]:{opt_content}\n"
     

@@ -5,6 +5,29 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp import types
 import json
+import logging
+import logging.handlers
+import sys
+
+# MCPServer 以子进程运行，stdout 归 MCP 协议（JSON-RPC），日志只能写 stderr + 独立文件
+_fmt = logging.Formatter(
+    '<%(asctime)s>{%(levelname)s}[%(name)s]: %(message)s',
+    datefmt='%Y-%m-%d@%H:%M:%S'
+)
+_root = logging.getLogger()
+_root.setLevel(logging.DEBUG)
+_sh = logging.StreamHandler(sys.stderr)
+_sh.setLevel(logging.DEBUG)
+_sh.setFormatter(_fmt)
+_root.addHandler(_sh)
+_fh = logging.handlers.RotatingFileHandler(
+    'mcp_server.log', maxBytes=10_485_760, backupCount=3, encoding='utf-8'
+)
+_fh.setLevel(logging.DEBUG)
+_fh.setFormatter(_fmt)
+_root.addHandler(_fh)
+
+logger = logging.getLogger(__name__)
 
 app = Server("frederica-tools")
 
@@ -32,8 +55,10 @@ TOOL_EXECUTORS = {
     "search_markdown_titles": execute_search_markdown_tool,
 }
 def openai_to_mcp_tool(tool_def:dict)->types.Tool:
+    name = tool_def["function"]["name"]
+    logger.debug(f"Converting OpenAI tool definition to MCP: {name}")
     return types.Tool(
-        name=tool_def["function"]["name"],
+        name=name,
         description=tool_def["function"]["description"],
         inputSchema=tool_def["function"]["parameters"]
     )
@@ -41,8 +66,8 @@ def openai_to_mcp_tool(tool_def:dict)->types.Tool:
 
 @app.list_tools()
 async def list_tools() -> list[types.Tool]:
-
-    return [
+    logger.debug("list_tools called")
+    tools = [
         openai_to_mcp_tool(create_file_tool_def),
         openai_to_mcp_tool(delete_file_tool_def),
         openai_to_mcp_tool(read_file_tool_def),
@@ -54,25 +79,34 @@ async def list_tools() -> list[types.Tool]:
         openai_to_mcp_tool(web_search_tool_def),
         openai_to_mcp_tool(search_markdown_tool_def),
     ]
+    logger.info(f"Listing {len(tools)} tools")
+    return tools
 
 @app.call_tool()
 async def call_tool(name: str, arguments_dict: dict) -> list[types.TextContent]:
-    tool_response=TOOL_EXECUTORS[name]({
-        "function": { # 兼容层，以后删掉
-            "name": name,
-            "arguments": json.dumps(arguments_dict)
-        }
-    })
-    return [
-        types.TextContent(
-            type="text",
-            text=tool_response
-        )
-    ]
+    logger.info(f"call_tool: {name}, args={arguments_dict}")
+    if not name in TOOL_EXECUTORS:
+        logger.warning(f"Tool not found: {name}")
+        return [types.TextContent(type="text", text=f"Local MCP Server Exception: Tool {name} Not Found")]
+    try:
+        tool_response = TOOL_EXECUTORS[name](arguments_dict)
+        logger.debug(f"Tool {name} returned {len(tool_response)} chars")
+        return [
+            types.TextContent(
+                type="text",
+                text=tool_response
+            )
+        ]
+    except Exception as e:
+        logger.exception(f"Exception while executing tool {name}")
+        return [types.TextContent(type="text", text=f"Local MCP Server Exception: {e}")]
 
 async def main():
+    logger.info("MCPServer starting")
     async with stdio_server() as (read, write):
+        logger.info("stdio_server ready")
         await app.run(read, write, app.create_initialization_options())
+    logger.info("MCPServer stopped")
 
 
 if __name__ == "__main__":

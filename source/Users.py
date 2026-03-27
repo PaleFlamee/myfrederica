@@ -21,50 +21,6 @@ LLM_ENABLE_THINKING = config.llm_enable_thinking
 HOME_DIRECTORY = config.home_directory
 USER_CONVERSATION_EXPIRE_TIMEOUT = config.user_conversation_expire_timeout
 
-# from tools.list_file_tool import execute_tool_call as execute_list, TOOL_DEFINITION as LIST_TOOL
-# from tools.read_file_tool import execute_tool_call as execute_read, TOOL_DEFINITION as READ_TOOL
-# from tools.create_file_or_folder_tool import execute_tool_call as execute_create, TOOL_DEFINITION as CREATE_TOOL
-# from tools.write_to_file_tool import execute_tool_call as execute_write, TOOL_DEFINITION as WRITE_TOOL
-# # from tools.search_files_tool import execute_tool_call as execute_search, TOOL_DEFINITION as SEARCH_TOOL
-# from tools.delete_file_or_folder_tool import execute_tool_call as execute_delete, TOOL_DEFINITION as DELETE_TOOL
-# from tools.replace_in_file_tool import execute_tool_call as execute_replace, TOOL_DEFINITION as REPLACE_TOOL
-# from tools.web_search_ali_tool import execute_tool_call as execute_web_search_ali, TOOL_DEFINITION as WEB_SEARCH_ALI_TOOL
-# from tools.fetch_url_tool import execute_tool_call as execute_fetch_url_markdown, TOOL_DEFINITION as FETCH_URL_TOOL
-# from tools.execute_command_tool import execute_tool_call as execute_command, TOOL_DEFINITION as EXECUTE_COMMAND_TOOL
-# from tools.cron_manage_tool import execute_tool_call as execute_cron_manage, TOOL_DEFINITION as CRON_MANAGE_TOOL
-# from tools.search_markdown_tool import execute_tool_call as execute_search_markdown, TOOL_DEFINITION as SEARCH_MARKDOWN_TOOL
-# # from tools.read_image_tool import execute_tool_call as execute_read_image, TOOL_DEFINITION as READ_IMAGE_TOOL
-
-# TOOLS = [
-#     CRON_MANAGE_TOOL,
-#     LIST_TOOL,
-#     READ_TOOL,
-#     CREATE_TOOL,
-#     WRITE_TOOL,
-#     #SEARCH_TOOL,
-#     DELETE_TOOL,
-#     REPLACE_TOOL,
-#     WEB_SEARCH_ALI_TOOL,
-#     FETCH_URL_TOOL,
-#     EXECUTE_COMMAND_TOOL,
-#     SEARCH_MARKDOWN_TOOL,
-#     #READ_IMAGE_TOOL
-# ]
-# TOOL_EXECUTORS = {
-#     "cron_manage": execute_cron_manage,
-#     "list_files": execute_list,
-#     "read_file": execute_read,
-#     "create_file_or_folder": execute_create,
-#     "write_file": execute_write,
-#     #"search_files": execute_search,
-#     "delete_file_or_folder": execute_delete,
-#     "replace_in_file": execute_replace,
-#     "web_search_ali": execute_web_search_ali,
-#     "fetch_url_markdown": execute_fetch_url_markdown,
-#     "execute_command": execute_command,
-#     "search_markdown_titles": execute_search_markdown,
-#     #"read_image": execute_read_image
-# }
 tool_registry = ToolRegistry()
 tools = tool_registry.get_tools()
 client = OpenAI(

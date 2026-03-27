@@ -47,10 +47,9 @@ returncode: {result.returncode}"
     except Exception as e:
         return f"error: {str(e)}"
 
-def execute_tool_call(tool_call: Dict[str, Any]) -> str:
+def execute_tool_call(arguments:dict) -> str:
     try:
-        tool_call_data = json.loads(tool_call["function"]["arguments"])
-        return execute_command(**tool_call_data)
+        return execute_command(**arguments)
     except json.JSONDecodeError as e:
         return f"错误：工具调用格式不正确 - 缺少字段: {str(e)}"
     except Exception as e:
