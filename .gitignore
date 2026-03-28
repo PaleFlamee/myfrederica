@@ -9,3 +9,5 @@ test_*.py
 home/*
 
 __pycache__/
+
+.claude/*
