@@ -5,7 +5,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.sse import sse_client
 from typing import Any, Dict, List, Optional
-import sys
+import os
 
 logger = logging.getLogger(__name__)
     
@@ -59,10 +59,12 @@ class _McpClientBase:
         return tools_openai
 
 class McpClientStdio(_McpClientBase):
-    def __init__(self, server_script: str):
-        super().__init__()
-        self._server_script = server_script
-        logger.info(f"McpClientStdio: initializing with script={server_script}")
+    def __init__(self, command: str, args: List[str], env: Optional[Dict[str, str]] = None):
+        super().__init__()        
+        self._command = command
+        self._args = args
+        self._env = env
+        logger.info(f"McpClientStdio: initializing with {command},{args},{env}")
         self._run(self._init_session()) # 同步等待初始化完成
         logger.info("McpClientStdio: session initialized")
         
@@ -74,8 +76,9 @@ class McpClientStdio(_McpClientBase):
         logger.debug("McpClientStdio._init_session: launching subprocess and opening stdio transport")
         read, write = await self._exit_stack.enter_async_context(
             stdio_client(StdioServerParameters(
-                command=sys.executable,
-                args=[self._server_script]
+                command=self._command,
+                args=self._args,
+                env=self._env
             ))
         )
         logger.debug("McpClientStdio._init_session: stdio transport ready, creating ClientSession")
@@ -91,7 +94,7 @@ class McpClientSSE(_McpClientBase):
         self._url = url
         self.headers = headers
         logger.info(f"McpClientSSE: initializing with url={url}")
-        self._run(self._init_session()) # 同步等待初始化完成
+        self._run(self._init_session(), timeout=60) # 同步等待初始化完成
         logger.info("McpClientSSE: session initialized")
         
     async def _init_session(self):
@@ -113,10 +116,43 @@ class McpClientSSE(_McpClientBase):
         await self._session.initialize()
         logger.debug("McpClientSSE._init_session: MCP session initialized")
 
+class McpClientStreamableHTTP(_McpClientBase):
+    def __init__(self, url: str, headers: Dict[str, Any]):
+        super().__init__()
+        self._url = url
+        self.headers = headers
+        logger.info(f"McpClientStreamableHTTP: initializing with url={url}")
+        self._run(self._init_session(), timeout=60) # 同步等待初始化完成
+        logger.info("McpClientStreamableHTTP: session initialized")
+        
+    async def _init_session(self):
+        from contextlib import AsyncExitStack
+        import httpx
+        from mcp.client.streamable_http import streamable_http_client
+        
+        self._exit_stack = AsyncExitStack()
+        
+        logger.debug(f"McpClientStreamableHTTP._init_session: connecting to {self._url}")
+        
+        # headers 通过 httpx.AsyncClient 传入，需要手动管理生命周期
+        http_client = httpx.AsyncClient(headers=self.headers)
+        await self._exit_stack.enter_async_context(http_client)
+        
+        read, write, _ = await self._exit_stack.enter_async_context(
+            streamable_http_client(self._url, http_client=http_client)
+        )
+        logger.debug("McpClientStreamableHTTP._init_session: transport ready, creating ClientSession")
+        self._session = await self._exit_stack.enter_async_context(
+            ClientSession(read, write)
+        )
+        await self._session.initialize()
+        logger.debug("McpClientStreamableHTTP._init_session: MCP session initialized")
+
 from tools.cron_manage_tool import TOOL_DEFINITION as cron_manage_tool_def, execute_tool_call as execute_cron_manage_tool
 
 class ToolRegistry:
-    def __init__(self, remote_mcp_servers:list[Dict[str, Dict[str, Any]]] = []): # list[{url:str, headers:{str:Any}}]
+    def __init__(self, local_mcp_servers:Dict[str, Dict[str, Any]] = {},\
+                 remote_mcp_servers:Dict[str, Dict[str, Any]] = {}): # [name:{url:str, headers:{str:Any}}]
         logger.info("ToolRegistry: initializing")
         self.tools = []
         self.tool_executors = {}
@@ -125,16 +161,56 @@ class ToolRegistry:
         self.tool_executors["cron_manage"] = execute_cron_manage_tool
         logger.debug("ToolRegistry: registered direct tool: cron_manage")
 
-        import os
-        script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "MCPServer.py")
-        logger.info(f"ToolRegistry: connecting to local MCP server: {script_path}")
-        self.local_mcp_client = McpClientStdio(server_script=script_path)
-        local_mcp_tools = self.local_mcp_client.list_tools()
-        self.tools.extend(local_mcp_tools)
-        for tool in local_mcp_tools:
-            self.tool_executors[tool["function"]["name"]] = self.local_mcp_client.call_tool
-        logger.info(f"ToolRegistry: registered {len(local_mcp_tools)} tools from local MCP server")
-        # temporarily ignoring remote mcp servers
+        # import os
+        # script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "MCPServer.py")
+        # logger.info(f"ToolRegistry: connecting to local MCP server: {script_path}")
+        # self.local_mcp_client = McpClientStdio(server_script=script_path)
+        # local_mcp_tools = self.local_mcp_client.list_tools()
+        # self.tools.extend(local_mcp_tools)
+        # for tool in local_mcp_tools:
+        #     self.tool_executors[tool["function"]["name"]] = self.local_mcp_client.call_tool
+        # logger.info(f"ToolRegistry: registered {len(local_mcp_tools)} tools from local MCP server")
+        
+        for server_name, server_cfg in local_mcp_servers.items():
+            try:
+                if "command" in server_cfg:
+                    local_mcp_client = McpClientStdio(
+                        command=server_cfg["command"],
+                        args=server_cfg.get("args", []),
+                        env=server_cfg.get("env", None)
+                    )
+                elif "url" in server_cfg:
+                    server_type = server_cfg.get("type", "streamable_http")
+                    if server_type == "sse":
+                        local_mcp_client = McpClientSSE(server_cfg["url"], server_cfg.get("headers", {}))
+                    else:
+                        local_mcp_client = McpClientStreamableHTTP(server_cfg["url"], server_cfg.get("headers", {}))
+                else:
+                    logger.error(f"ToolRegistry: {server_name} has neither 'command' nor 'url', skipping")
+                    continue
+
+                local_mcp_tools = local_mcp_client.list_tools()
+                self.tools.extend(local_mcp_tools)
+                for tool in local_mcp_tools:
+                    self.tool_executors[tool["function"]["name"]] = local_mcp_client.call_tool
+                logger.info(f"ToolRegistry: registered {len(local_mcp_tools)} tools from {server_name}")
+
+            except Exception as e:
+                logger.error(f"ToolRegistry: failed to connect to {server_name} ({server_cfg}): {e}, skipping")
+
+        for server_name, server_cfg in remote_mcp_servers.items():
+            url = server_cfg["url"]
+            headers = server_cfg.get("headers", {})
+            logger.info(f"ToolRegistry: connecting to remote MCP server: {server_name} @ {url}")
+            try:
+                remote_mcp_client = McpClientStreamableHTTP(url, headers)
+                remote_mcp_tools = remote_mcp_client.list_tools()
+                self.tools.extend(remote_mcp_tools)
+                for tool in remote_mcp_tools:
+                    self.tool_executors[tool["function"]["name"]] = remote_mcp_client.call_tool
+                logger.info(f"ToolRegistry: registered {len(remote_mcp_tools)} tools from {server_name}")
+            except Exception as e:
+                logger.error(f"ToolRegistry: failed to connect to {server_name} @ {url}: {e}, skipping")
         logger.info(f"ToolRegistry: ready, total {len(self.tools)} tools available")
 
     
@@ -142,7 +218,7 @@ class ToolRegistry:
         logger.debug(f"ToolRegistry.execute: {name}")
         if name not in self.tool_executors:
             logger.error(f"ToolRegistry.execute: unknown tool '{name}'")
-            raise KeyError(f"Tool not found: {name}")
+            return f"Tool not found: {name}"
         return self.tool_executors[name](name, arguments_dict)
 
     def get_tools(self):

@@ -21,8 +21,21 @@ LLM_ENABLE_THINKING = config.llm_enable_thinking
 HOME_DIRECTORY = config.home_directory
 USER_CONVERSATION_EXPIRE_TIMEOUT = config.user_conversation_expire_timeout
 
-tool_registry = ToolRegistry()
+def load_mcp_server_cfg(home_dir:str, cfg_file:str) -> Dict[str, Dict[str, Any]]:
+    ms_cfg_path_abs = os.path.join(os.getcwd(), home_dir, cfg_file)
+    if not os.path.exists(ms_cfg_path_abs):
+        default_data = {
+            "mcpServers": {}
+        }
+        with open(ms_cfg_path_abs, "w", encoding="utf-8") as f:
+            json.dump(default_data, f, ensure_ascii=False, indent=4)
+    with open(ms_cfg_path_abs, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return data["mcpServers"]
+
+tool_registry = ToolRegistry(load_mcp_server_cfg(HOME_DIRECTORY, "local_mcp_servers.json"),load_mcp_server_cfg(HOME_DIRECTORY, "remote_mcp_servers.json"))
 tools = tool_registry.get_tools()
+logger.info(f"Registered {len(tools)} tools")
 client = OpenAI(
     api_key = LLM_API_KEY,
     base_url = LLM_BASE_URL
@@ -117,11 +130,14 @@ class UserManager:
                             logger.debug(f"{self.user_id} extended chat history & awq cleared")
                             # logger.debug(f"{self.user_id} chat history:"); logger.debug(general_output_msg_list(self.chat_history))
                         
-                        # TODO: add exception handling
-                        response:Message = get_llm_response(self.chat_history)
-                        # logger.debug(f"{self.user_id} 1# response:"); logger.debug(general_output_msg(response))
-
-                        self.process_tool_calls(response)
+                        try:
+                            response:Message = get_llm_response(self.chat_history)
+                            # logger.debug(f"{self.user_id} 1# response:"); logger.debug(general_output_msg(response))
+                            self.process_tool_calls(response)
+                        except Exception as e:
+                            logger.error(f"{self.user_id} LLM error: {e}")
+                            from .WeChatClient import get_wechat_client
+                            get_wechat_client().send_text_message(self.user_id, "（出了点问题，请稍后再试）")
 
                         if self.is_farewell_caused_active:
                             self.session_file.close()

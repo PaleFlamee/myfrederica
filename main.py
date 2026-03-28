@@ -1,3 +1,8 @@
+import logging
+from source.Logger import setup_logger
+setup_logger()
+logger = logging.getLogger(__name__)
+
 from source.Users import *
 from source.WeChatServerV2 import WeChatServer
 from source.CronManagerV2 import CronManager
@@ -9,10 +14,6 @@ logging.getLogger("openai").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
-
-from source.Logger import setup_logger
-setup_logger()
-logger = logging.getLogger(__name__)
 
 def main():
     user_manager: UserManager = UserManager()
