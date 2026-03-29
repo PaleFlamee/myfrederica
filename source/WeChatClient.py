@@ -153,7 +153,7 @@ class WeChatClient:
     
     def upload_media(self, file_path: str, media_type: Optional[str] = None) -> Optional[str]:
         """
-        上传文件到企业微信服务器
+        通用 上传文件到企业微信服务器，支持各种文件类型
         
         Args:
             file_path: 本地文件路径
@@ -270,11 +270,11 @@ class WeChatClient:
     def send_file_message(self, user_id: str, media_id: str) -> bool:
         """
         使用已有的media_id发送文件消息
-        
+
         Args:
             user_id: 接收用户ID
             media_id: 通过upload_media获取的媒体ID
-            
+
         Returns:
             是否发送成功
         """
@@ -284,7 +284,7 @@ class WeChatClient:
             if not access_token:
                 self.logger.error("无法获取access_token，消息发送失败")
                 return False
-            
+
             # 构建文件消息数据（根据企业微信API文档）
             message_data = {
                 "touser": user_id,
@@ -297,13 +297,13 @@ class WeChatClient:
                 "enable_duplicate_check": 0,  # 不开启重复消息检查
                 "duplicate_check_interval": 1800  # 重复消息检查时间间隔
             }
-            
+
             self.logger.info(f"准备发送文件消息给用户 {user_id}，media_id: {media_id}")
-            
+
             # 发送消息
             url = f"{self.base_url}/message/send"
             params = {"access_token": access_token}
-            
+
             response = requests.post(
                 url,
                 params=params,
@@ -311,20 +311,107 @@ class WeChatClient:
                 timeout=10
             )
             response.raise_for_status()
-            
+
             result = response.json()
-            
+
             if result.get("errcode") == 0:
                 self.logger.info(f"成功发送文件消息给用户 {user_id}")
                 return True
             else:
                 self.logger.error(f"发送文件消息失败: {result}")
                 return False
-                
+
         except Exception as e:
             self.logger.error(f"发送文件消息时出错: {e}")
             return False
-    
+
+    def send_image_message(self, user_id: str, media_id: str) -> bool:
+        """
+        使用已有的media_id发送图片消息
+
+        Args:
+            user_id: 接收用户ID
+            media_id: 通过upload_media获取的媒体ID
+
+        Returns:
+            是否发送成功
+        """
+        try:
+            # 获取access_token
+            access_token = self._get_access_token()
+            if not access_token:
+                self.logger.error("无法获取access_token，消息发送失败")
+                return False
+
+            # 构建图片消息数据（根据企业微信API文档）
+            message_data = {
+                "touser": user_id,
+                "msgtype": "image",
+                "agentid": int(self.agentid),
+                "image": {
+                    "media_id": media_id
+                },
+                "safe": 0,  # 非保密消息
+                "enable_duplicate_check": 0,  # 不开启重复消息检查
+                "duplicate_check_interval": 1800  # 重复消息检查时间间隔
+            }
+
+            self.logger.info(f"准备发送图片消息给用户 {user_id}，media_id: {media_id}")
+
+            # 发送消息
+            url = f"{self.base_url}/message/send"
+            params = {"access_token": access_token}
+
+            response = requests.post(
+                url,
+                params=params,
+                json=message_data,
+                timeout=10
+            )
+            response.raise_for_status()
+
+            result = response.json()
+
+            if result.get("errcode") == 0:
+                self.logger.info(f"成功发送图片消息给用户 {user_id}")
+                return True
+            else:
+                self.logger.error(f"发送图片消息失败: {result}")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"发送图片消息时出错: {e}")
+            return False
+
+    def send_image(self, user_id: str, file_path: str, media_type: Optional[str] = 'image') -> bool:
+        """
+        发送图片给指定用户
+
+        Args:
+            user_id: 接收用户ID
+            file_path: 本地文件路径
+            media_type: 文件类型，对于图片应为'image'
+
+        Returns:
+            是否发送成功
+        """
+        try:
+            # 先上传图片获取media_id
+            self.logger.info(f"开始上传图片: {file_path}")
+            media_id = self.upload_media(file_path, media_type)
+
+            if not media_id:
+                self.logger.error("图片上传失败，无法发送图片消息")
+                return False
+
+            # 使用media_id发送图片消息
+            self.logger.info(f"图片上传成功，开始发送图片消息给用户 {user_id}")
+            return self.send_image_message(user_id, media_id)
+
+        except Exception as e:
+            self.logger.error(f"发送图片时出错: {e}")
+            return False
+
     def send_text_message(self, user_id: str, content: str) -> bool:
         """发送文本消息给指定用户"""
         try:

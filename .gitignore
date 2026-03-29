@@ -10,4 +10,6 @@ home/*
 
 __pycache__/
 
+_LEGACY_*
+
 .claude/*

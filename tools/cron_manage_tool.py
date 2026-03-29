@@ -196,7 +196,7 @@ TOOL_DEFINITION = {
                 },
                 "message": {
                     "type": "string",
-                    "description": "定时任务触发时用来提示Frederica的信息（create时必填）"
+                    "description": "定时任务触发时发送给Frederica的提醒信息（create时必填）"
                 },
                 "target_time": {
                     "type": "string",

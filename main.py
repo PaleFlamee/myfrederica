@@ -10,10 +10,10 @@ from tools.cron_manage_tool import set_tool_cron_manager
 # from tools.read_image_tool import set_tool_user_manager
 from APIServer import APIServer
 
-logging.getLogger("openai").setLevel(logging.WARNING)
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
+# logging.getLogger("openai").setLevel(logging.WARNING)
+# logging.getLogger("httpx").setLevel(logging.WARNING)
+# logging.getLogger("httpcore").setLevel(logging.WARNING)
+# logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 def main():
     user_manager: UserManager = UserManager()

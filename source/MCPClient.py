@@ -22,8 +22,18 @@ class _McpClientBase:
     def _run(self, coro, timeout: float = 30):
         # 把协程提交到后台 loop，同步等待结果
         logger.debug(f"_run: submitting coroutine to background loop (timeout={timeout}s)")
-        return asyncio.run_coroutine_threadsafe(coro, self._loop).result(timeout)
-    
+        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        try:
+            return future.result(timeout)
+        except Exception:
+            future.cancel()  # 通知 asyncio task 取消
+            raise
+    def close(self):
+        """停止后台事件循环和线程"""
+        self._loop.call_soon_threadsafe(self._loop.stop)
+        self._thread.join(timeout=5)
+        logger.debug(f"{self.__class__.__name__}: background loop stopped")
+
     def list_tools(self) -> list:
         if self._tools_openai is None or self.is_tool_updated:
             logger.debug("list_tools: cache miss, fetching from server")
@@ -149,6 +159,8 @@ class McpClientStreamableHTTP(_McpClientBase):
         logger.debug("McpClientStreamableHTTP._init_session: MCP session initialized")
 
 from tools.cron_manage_tool import TOOL_DEFINITION as cron_manage_tool_def, execute_tool_call as execute_cron_manage_tool
+from tools.send_file_tool import TOOL_DEFINITION as send_file_tool_def, execute_tool_call as execute_send_file_tool
+from tools.send_image_tool import TOOL_DEFINITION as send_image_tool_def, execute_tool_call as execute_send_image_tool
 
 class ToolRegistry:
     def __init__(self, local_mcp_servers:Dict[str, Dict[str, Any]] = {},\
@@ -160,6 +172,14 @@ class ToolRegistry:
         self.tools.extend([cron_manage_tool_def])
         self.tool_executors["cron_manage"] = execute_cron_manage_tool
         logger.debug("ToolRegistry: registered direct tool: cron_manage")
+
+        self.tools.extend([send_file_tool_def])
+        self.tool_executors["send_file"] = execute_send_file_tool
+        logger.debug("ToolRegistry: registered direct tool: send_file")
+
+        self.tools.extend([send_image_tool_def])
+        self.tool_executors["send_image"] = execute_send_image_tool
+        logger.debug("ToolRegistry: registered direct tool: send_image")
 
         # import os
         # script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "MCPServer.py")
@@ -194,9 +214,12 @@ class ToolRegistry:
                 for tool in local_mcp_tools:
                     self.tool_executors[tool["function"]["name"]] = local_mcp_client.call_tool
                 logger.info(f"ToolRegistry: registered {len(local_mcp_tools)} tools from {server_name}")
-
             except Exception as e:
                 logger.error(f"ToolRegistry: failed to connect to {server_name} ({server_cfg}): {e}, skipping")
+                try:
+                    remote_mcp_client.close()  # 停掉残留的后台线程
+                except Exception:
+                    pass
 
         for server_name, server_cfg in remote_mcp_servers.items():
             url = server_cfg["url"]
@@ -211,6 +234,10 @@ class ToolRegistry:
                 logger.info(f"ToolRegistry: registered {len(remote_mcp_tools)} tools from {server_name}")
             except Exception as e:
                 logger.error(f"ToolRegistry: failed to connect to {server_name} @ {url}: {e}, skipping")
+                try:
+                    remote_mcp_client.close()  # 停掉残留的后台线程
+                except Exception:
+                    pass
         logger.info(f"ToolRegistry: ready, total {len(self.tools)} tools available")
 
     

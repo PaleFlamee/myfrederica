@@ -276,14 +276,16 @@ class UserManager:
                 
 
         def farewell(self) -> None:
-            self.new_message([Message(role="user", content=f"\
-[SYSTEM MESSAGE]\
-{self.user_id} has been in silence for {USER_CONVERSATION_EXPIRE_TIMEOUT}. \
-Summary anything notewothy, write them down to your memory about {self.user_id} ({self.user_id}/memories). \
-Also update `{self.user_id}/{self.user_id}-last-conversation-pick-up.md `\
-so that you can easily pick up where you left off when {self.user_id} come back. \
-And, if necessary, update `{self.user_id}/{self.user_id}.md` and `frederica`.\
-After finish all of this, you can say goodbye to {self.user_id}.")])
+            self.new_message([Message(role="user", content=
+                f"[System Message] "
+                f"{self.user_id} has been silent for {USER_CONVERSATION_EXPIRE_TIMEOUT}. "
+                f"Before this conversation ends: "
+                f"1. Summarize anything noteworthy from this session and write it to {self.user_id}/memories/. "
+                f"2. Update `{self.user_id}/{self.user_id}-last-conversation-pick-up.md` so you can resume naturally next time. "
+                f"3. If this conversation revealed new information about {self.user_id}, update `{self.user_id}/{self.user_id}.md`. "
+                f"4. If you have anything to tell your future self, update `frederica`. "
+                f"When done, say goodbye to {self.user_id}."
+            )])
 
         def new_message(self, incoming_message_queue:List[Message]) -> None:
             '''
