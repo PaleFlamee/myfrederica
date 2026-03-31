@@ -85,6 +85,7 @@ class UserManager:
                 os.mkdir(os.path.join(HOME_DIRECTORY, user_id, "sessions"))
                 os.mkdir(os.path.join(HOME_DIRECTORY, user_id, "memories"))
                 os.mkdir(os.path.join(HOME_DIRECTORY, user_id, "images"))
+                os.mkdir(os.path.join(HOME_DIRECTORY, user_id, "files"))
             self.processing_thread = Thread(
                 target=self.process_loop,
                 daemon=True

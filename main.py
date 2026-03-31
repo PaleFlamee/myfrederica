@@ -4,7 +4,7 @@ setup_logger()
 logger = logging.getLogger(__name__)
 
 from source.Users import *
-from source.WeChatServerV2 import WeChatServer
+from source.WeChatServerV2 import WeChatServer, WeChatBotServer
 from source.CronManagerV2 import CronManager
 from tools.cron_manage_tool import set_tool_cron_manager
 # from tools.read_image_tool import set_tool_user_manager
@@ -20,10 +20,10 @@ def main():
     cron_manager: CronManager = CronManager(user_manager)
 
     set_tool_cron_manager(cron_manager)
-    # set_tool_user_manager(user_manager)
-    
     cron_manager.start()
-    wechat_server: WeChatServer = WeChatServer(user_manager)
+
+    bot_server:WeChatBotServer = WeChatBotServer(user_manager)
+    wechat_server: WeChatServer = WeChatServer(user_manager, bot_server)
     wechat_server.start()
     
     # 启动API服务器

@@ -11,7 +11,11 @@ import logging
 import time
 import threading
 from typing import Dict, Optional, Set, Tuple
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlparse, unquote
+import json
+import requests
+import base64
+from Crypto.Cipher import AES
 
 import aiohttp
 from aiohttp import web
@@ -21,12 +25,197 @@ from wechatpy.enterprise.replies import TextReply
 
 from .Message import Message, MultimodalContent
 from .Users import UserManager
+from .WXBizJsonMsgCrypt import WXBizJsonMsgCrypt
 
 # 使用项目现有的日志系统
 logger = logging.getLogger(__name__)
 
 from .Utils import get_config_instance
 config = get_config_instance()
+
+class WeChatBotServer:
+    def __init__(self, user_mgr_instance: UserManager):
+        global config
+        self.home_directory = config.home_directory
+        self.token = config.wechat_work_callback_token
+        self.encoding_aes_key = config.wechat_work_encoding_aes_key
+        self.user_mgr = user_mgr_instance
+        self.crypto = WXBizJsonMsgCrypt(self.token, self.encoding_aes_key, "")
+        # receiveid 必须是空字符串
+
+    async def _download_decrypt_file_and_send_announcement(self, file_url:str, user_id:str):
+        """
+        下载并解密加密文件
+            
+        返回:
+            tuple: (status: bool, data: bytes/str) 
+                status为True时data是解密后的文件数据，
+                status为False时data是错误信息
+        """
+        try:
+            # 1. 下载加密文件
+            logger.info("开始下载加密文件: %s", file_url)
+            # response = requests.get(file_url, timeout=15)
+            # response.raise_for_status()
+            # encrypted_data = response.content
+            async with aiohttp.ClientSession() as session:
+                async with session.get(file_url, timeout=aiohttp.ClientTimeout(total=120)) as response:
+                    if response.status != 200:
+                        logger.error(f"下载媒体文件失败: HTTP {response.status}")
+                        return None
+                    encrypted_data = await response.read()
+                    # test
+                    # logger.error(response.headers)
+                    # logger.error(encrypted_data)
+                    # /test
+                    logger.info("文件下载成功，大小: %d 字节", len(encrypted_data))
+
+            # 2. 准备AES密钥和IV
+            if not self.encoding_aes_key:
+                raise ValueError("AES密钥不能为空")
+                
+            # Base64解码密钥 (自动处理填充)
+            aes_key = base64.b64decode(self.encoding_aes_key + "=" * (-len(self.encoding_aes_key) % 4))
+            if len(aes_key) != 32:
+                raise ValueError("无效的AES密钥长度: 应为32字节")
+                
+            iv = aes_key[:16]  # 初始向量为密钥前16字节
+            
+            # 3. 解密文件数据
+            cipher = AES.new(aes_key, AES.MODE_CBC, iv)
+            decrypted_data = cipher.decrypt(encrypted_data)
+            
+            # 4. 去除PKCS#7填充 (Python 3兼容写法)
+            pad_len = decrypted_data[-1]  # 直接获取最后一个字节的整数值
+            if pad_len > 32:  # AES-256块大小为32字节
+                raise ValueError("无效的填充长度 (大于32字节)")
+                
+            decrypted_data = decrypted_data[:-pad_len]
+            logger.info("文件解密成功，解密后大小: %d 字节", len(decrypted_data))
+
+            # 保存文件
+            content_disposition = response.headers.get('Content-Disposition', '')
+            filename = None
+            if 'filename=' in content_disposition:
+                raw_name = content_disposition.split('filename=')[-1].strip()
+                filename = unquote(raw_name)
+
+            if not filename:
+                url_id = urlparse(file_url).path.split('/')[-1][:16]
+                filename = f"{int(time.time())}_{url_id}"
+
+            save_path = os.path.join(config.home_directory, user_id, "files", filename)
+
+            with open(save_path, 'wb') as f:
+                f.write(decrypted_data)
+            
+            logger.info(f"文件下载成功: {save_path}, 大小: {len(decrypted_data)} 字节")
+
+            self.user_mgr.general_handle_new_message(
+                user_id=user_id,
+                incoming_message_queue=[
+                    Message(
+                        content=f"[System Message] Received file, saved to ./{user_id}/files/{filename}",
+                        role="user"
+                    )
+                ]
+            )
+            
+            return True, decrypted_data
+            
+        except ValueError as e:
+            error_msg = f"参数错误 : {str(e)}"
+            logger.error(error_msg)
+            return False, error_msg
+            
+        except Exception as e:
+            error_msg = f"文件处理异常 : {str(e)}"
+            logger.error(error_msg)
+            return False, error_msg
+
+
+    async def handle_get(self, request: web.Request):
+        """处理GET请求（企业微信服务器验证）"""
+        client_ip = request.remote
+        try:
+            # 解析查询参数
+            query_params = parse_qs(request.query_string)
+            
+            # 提取参数
+            msg_signature = query_params.get('msg_signature', [''])[0]
+            timestamp = query_params.get('timestamp', [''])[0]
+            nonce = query_params.get('nonce', [''])[0]
+            echostr = query_params.get('echostr', [''])[0]
+            
+            if not all([msg_signature, timestamp, nonce, echostr]):
+                logger.error(f"WeChatBotServer:GET请求缺少必要参数，来自 {client_ip}")
+                return web.Response(status=400, text="Missing required parameters")
+            
+            # 验证签名并解密echostr
+            try:
+                ret, echostr_plain = self.crypto.VerifyURL(msg_signature, timestamp, nonce, echostr)
+                if ret != 0:
+                    return web.Response(status=400, text="Signature verification failed")
+                
+                # 返回解密后的echostr
+                return web.Response(
+                    text=echostr_plain,
+                    content_type='text/plain',
+                    charset='utf-8'
+                )
+                
+            except Exception as e:
+                logger.error(f"WeChatBotServer:GET验证失败: {e}，来自 {client_ip}")
+                return web.Response(status=400, text="Signature verification failed")
+                
+        except Exception as e:
+            logger.error(f"WeChatBotServer:处理GET请求时出错: {e}，来自 {client_ip}")
+            return web.Response(status=500, text=f"Internal Server Error: {str(e)}")
+    async def handle_post(self, request: web.Request):
+        """处理POST请求（接收企业微信消息）"""
+        client_ip = request.remote
+        try:
+            
+            # 解析查询参数
+            query_params = parse_qs(request.query_string)
+            
+            # 提取参数
+            msg_signature = query_params.get('msg_signature', [''])[0]
+            timestamp = query_params.get('timestamp', [''])[0]
+            nonce = query_params.get('nonce', [''])[0]
+            
+            if not all([msg_signature, timestamp, nonce]):
+                logger.error(f"POST请求缺少必要参数，来自 {client_ip}")
+                return web.Response(status=400, text="Missing required parameters")
+            
+            # 读取请求体
+            request_body = await request.text()
+            try:
+                ret, msg = self.crypto.DecryptMsg(request_body, msg_signature, timestamp, nonce)
+                
+                if not request_body:
+                    logger.error(f"POST请求体为空，来自 {client_ip}")
+                    return web.Response(status=400, text="Empty request body")
+                
+                data = json.loads(msg)
+
+                if data["msgtype"] == "file":
+                    user_id = data["from"]["userid"]
+                    file_url = data["file"]["url"]
+                    asyncio.create_task(self._download_decrypt_file_and_send_announcement(file_url, user_id))
+
+                return web.Response(text="")
+
+            except Exception as e:
+                logger.error(f"解密或处理消息失败: {e}，来自 {client_ip}")
+                return web.Response(status=400, text="Message processing failed")
+                
+        except asyncio.TimeoutError:
+            logger.error(f"请求超时，来自 {client_ip}")
+            return web.Response(status=408, text="Request Timeout")
+        except Exception as e:
+            logger.error(f"处理POST请求时出错: {e}，来自 {client_ip}")
+            return web.Response(status=500, text=f"Internal Server Error: {str(e)}")
 
 
 class WeChatServer:
@@ -35,7 +224,7 @@ class WeChatServer:
     单class设计，支持高并发，应对公网环境
     """
     
-    def __init__(self, user_mgr_instance: UserManager):
+    def __init__(self, user_mgr_instance: UserManager, bot_server: WeChatBotServer = None):
         """初始化服务器"""
         # 从环境变量读取配置
         global config
@@ -75,6 +264,8 @@ class WeChatServer:
         # 用户管理实例
         self.user_mgr = user_mgr_instance
         
+        self.bot_server = bot_server
+        
         # 验证必要配置
         self._validate_config()
         
@@ -91,7 +282,6 @@ class WeChatServer:
         if missing_vars:
             logger.error(f"缺少必要环境变量: {missing_vars}")
             raise ValueError(f"缺少必要环境变量: {missing_vars}")
-    
     
     def _check_rate_limit(self, client_ip: str) -> bool:
         """检查频率限制"""
@@ -224,6 +414,7 @@ class WeChatServer:
         except Exception as e:
             logger.error(f"下载媒体文件时出错: {e}")
             return None
+
     async def _handle_get(self, request: web.Request) -> web.Response:
         """处理GET请求（企业微信服务器验证）"""
         client_ip = request.remote
@@ -518,7 +709,10 @@ class WeChatServer:
         # 添加路由
         self.app.router.add_get('/callback', self._handle_get)
         self.app.router.add_post('/callback', self._handle_post)
-        
+        if self.bot_server:
+            self.app.router.add_get('/bot_callback', self.bot_server.handle_get)
+            self.app.router.add_post('/bot_callback', self.bot_server.handle_post)
+                
         # 添加健康检查
         self.app.router.add_get('/health', lambda request: web.Response(text='OK'))
         
